@@ -4,6 +4,7 @@ fn main() {
 
 pub struct CPU {
     pub register_a: u8,
+    pub register_x: u8,
     pub status: u8,
     pub program_counter: u16,
 }
@@ -12,8 +13,42 @@ impl CPU {
     pub fn new() -> Self {
         CPU {
             register_a: 0,
+            register_x: 0,
             status: 0,
             program_counter: 0,
+        }
+    }
+
+    // LDA immidiate
+    fn lda(&mut self, value: u8){
+        self.register_a = value;
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    // TAX
+    fn tax(&mut self){
+        self.register_x = self.register_a;
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    fn update_zero_and_negative_flags(&mut self, result: u8){
+        // zero flag
+        if result == 0 {
+            //1bitç›®(å·¦ã‹ã‚‰2å€‹ç›®ã€Z)ã«1ãŒç«‹ã¤ã€‚orã§å–ã‚‹ã¨1bitãŒå¿…ãš1ãŒç«‹ã¤ã€‚
+            self.status = self.status | 0b0000_0010;
+        } else {
+            //zero flagãŒï¼ã˜ã‚ƒãªã„å ´åˆã€1bitç›®ã‚’ï¼ã«ã—ã¦ã€ãã‚Œä»¥å¤–ã¯ãã®ã¾ã¾
+            self.status = self.status & 0b1111_1101;
+        }
+
+        // negative flag
+        // 7bitç›®ãŒï¼‘ã®ã¨ãï¼ˆnegative flagãŒç«‹ã£ã¦ã„ã‚‹ã¨ãï¼‰
+        if result & 0b1000_0000 != 0 {
+            // 7bitç›®ã«ï¼‘ã‚’ç«‹ã¦ã¦ãã‚Œä»¥å¤–ã¯ãã®ã¾ã¾ã€‚
+            self.status = self.status | 0b1000_0000;
+        } else {
+            // 7bitç›®ã‚’ï¼ã«ã—ã¦ä»–ã¯ãã®ã¾ã¾ã€‚
+            self.status = self.status & 0b0111_1111;
         }
     }
 
@@ -25,35 +60,62 @@ impl CPU {
             self.program_counter += 1;
 
             match opscode {
-                // 0x~~‚Í‚P‚Ui”•\‹L@@0b~~‚Í‚Qi”•\‹L
+                // 0x~~ã¯16é€²æ•°è¡¨è¨˜ 0b~~ã¯2é€²æ•°è¡¨è¨˜
                 0xA9 => {
                     let param = program[self.program_counter as usize];
-                    self/program_counter += 1;
-                    self.register_a = param;
+                    self.program_counter += 1;
+                    self.lda(param);
+                }
 
-                    // zero flag
-                    if self.register_a == 0 {
-                        //1bit–Úi¶‚©‚ç‚QŒÂ–ÚAZj‚É‚P‚ª—§‚ÂBor‚Åæ‚é‚Æ1bit‚ª•K‚¸1‚ª—§‚ÂB
-                        self.status = self.status | 0b0000_0010;
-                    } else {
-                        //zero flag‚ª‚O‚¶‚á‚È‚¢ê‡A1bit–Ú‚ğ‚O‚É‚µ‚ÄA‚»‚êˆÈŠO‚Í‚»‚Ì‚Ü‚ÜB
-                        self.status = self.status & 0b1111_1101;
-                    }
+                // BRK
+                0x00 => {
+                    return;
+                }
 
-                    // negative flag
-                    // 7bit–Ú‚ª‚P‚Ì‚Æ‚«inegative flag‚ª—§‚Á‚Ä‚¢‚é‚Æ‚«j
-                    if self.register_a & 0b1000_0000 != 0 {
-                        // 7bit–Ú‚É‚P‚ğ—§‚Ä‚Ä‚»‚êˆÈŠO‚Í‚»‚Ì‚Ü‚ÜB
-                        self.status = self.status | 0b1000_0000;
-                    } else {
-                        // 7bit–Ú‚ğ‚O‚É‚µ‚Ä‘¼‚Í‚»‚Ì‚Ü‚ÜB
-                        self.status = self.status & 0b0111_1111;
-                    }
+                //TAX
+                0xAA => {
+                    self.tax();
                 }
 
                  _ => todo!("")
             }
         }
         todo!("");
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_0xa9_lda_immidiate_load_data() {
+        let mut cpu: CPU = CPU::new();
+        cpu.interpret(vec![0xa9, 0x05, 0x00]);
+        assert_eq!(cpu.register_a, 0x05);
+        assert!(cpu.status & 0b0000_0010 == 0b00);
+        assert!(cpu.status & 0b1000_0000 == 0);
+    }
+
+    #[test]
+    fn test_0xa9_lda_zero_flag() {
+        let mut cpu: CPU = CPU::new();
+        cpu.interpret(vec![0xa9, 0x00, 0x00]);
+        assert!(cpu.status & 0b0000_0010 == 0b10);
+    }
+
+    #[test]
+    fn test_0xa9_lda_negative_flag() {
+        let mut cpu: CPU = CPU::new();
+        cpu.interpret(vec![0xa9, 0x80, 0x00]);
+        assert!(cpu.status & 0b1000_0000 != 0);
+    }
+
+    #[test]
+    fn test_0xaa_tax_move_a_to_x() {
+        let mut cpu: CPU = CPU::new();
+        cpu.register_a = 10;
+        cpu.interpret(vec![0xaa, 0x00]);
+        assert_eq!(cpu.register_x, 10);
     }
 }
