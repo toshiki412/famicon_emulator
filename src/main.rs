@@ -11,7 +11,7 @@ pub enum AddressingMode {
     ZeroPage_X, //アドレス+xレジスタのアドレスの指す先の値を入れる       LDA $44,X => B5 44    aに0x44 + x 番目のアドレスにある値を入れる
     ZeroPage_Y, //yレジスタバージョン　　                              LDX $44,Y => B6 44
     Absolute,   //直接アドレスを指定してそのアドレスの指す先の値を入れる。LDA $4400 => AD 00 44  aに0x4400にある値を入れる
-    Absolute_X, //abusoluteにxレジスタの値分足したアドレスを指定する。   LDA $4400,X => BD 00 44
+    Absolute_X, //absoluteにxレジスタの値分足したアドレスを指定する。   LDA $4400,X => BD 00 44
     Absolute_Y, //yレジスタバージョン　　                              LDA $4400,Y => B9 00 44
     Indirect_X,
     Indirect_Y,
@@ -158,7 +158,7 @@ impl CPU {
                 }
                 0xAD => {
                     self.lda(&AddressingMode::Absolute);
-                    self.program_counter += 2;  //abusoluteは後ろに2バイトあるので+2
+                    self.program_counter += 2;  //absoluteは後ろに2バイトあるので+2
                 }
                 0xBD => {
                     self.lda(&AddressingMode::Absolute_X);
@@ -352,10 +352,91 @@ mod test {
     }
 
     #[test]
-    fn test_lda_from_memory() {
+    fn test_lda_from_memory_zero_page() {
         let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0xa5,0x10,0x00]);
+        cpu.reset();
         cpu.mem_write(0x10,0x55);               //メモリの0x10番地に0x55を書き込む
-        cpu.load_and_run(vec![0xa5,0x10,0x00]);
+        cpu.run();
         assert_eq!(cpu.register_a, 0x55)
+    }
+
+    #[test]
+    fn test_lda_from_memory_zero_page_x() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0xb5,0x10,0x00]);
+        cpu.reset();
+        cpu.mem_write(0x11,0x56);
+        cpu.register_x = 0x01;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x56);
+    }
+
+    #[test]
+    fn test_lda_from_memory_absolute() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0xad,0x10,0xaa,0x00]);
+        cpu.reset();
+        cpu.mem_write(0xaa10,0x57);
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x57);
+    }
+
+    #[test]
+    fn test_lda_from_memory_absolute_x() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0xbd,0x10,0xaa,0x00]);
+        cpu.reset();
+        cpu.mem_write(0xaa15,0x58);
+        cpu.register_x = 0x05;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x58);
+    }
+
+    #[test]
+    fn test_lda_from_memory_absolute_y() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0xb9,0x10,0xaa,0x00]);
+        cpu.reset();
+        cpu.mem_write(0xaa18,0x59);
+        cpu.register_y = 0x08;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x59);
+    }
+
+    #[test]
+    fn test_lda_from_memory_indirect_x() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0xa1,0x10,0x00]);
+        cpu.reset();
+        cpu.mem_write(0x18,0x05);   //0x10にregisterxを足した番地を読む(low byte)
+        cpu.mem_write(0x19,0xff);   //その次の番地(0x19)も読む(high byte)
+        cpu.mem_write(0xff05,0x5a); //lowとhighを結合した番地に値を書き込んでおく(これがアキュムレータにロードされる)
+        cpu.register_x = 0x08;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x5a); //二つの番地から取ったものを足した番地のところの値をアキュムレータがロードする
+    }
+
+    #[test]
+    fn test_lda_from_memory_indirect_y() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0xb1,0x10,0x00]);
+        cpu.reset();
+        cpu.mem_write(0x10,0x06);   //0x10番地を読む(low byte)
+        cpu.mem_write(0x11,0xff);   //その次の番地(0x11)も読む(high byte)
+        cpu.mem_write(0xff09,0x5b); //lowとhighを結合した番地にyを足した番地に値を書き込んでおく(これがアキュムレータにロードされる)
+        cpu.register_y = 0x03;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x5b); //結合した番地の値をアキュムレータがロードする
+    }
+
+    #[test]
+    fn test_sta_from_memory() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0x85,0x10,0x00]);
+        cpu.reset();
+        cpu.register_a = 0xba;
+        cpu.run();
+        assert_eq!(cpu.mem_read(0x10), 0xba);
     }
 }
