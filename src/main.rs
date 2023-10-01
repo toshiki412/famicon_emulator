@@ -2,12 +2,29 @@ fn main() {
     println!("Hello, world!");
 }
 
+#[derive(Debug)]                //deriveは継承。Debugトレイトを継承。{:?}が使用可能など。
+#[allow(non_camel_case_types)]  //allowはリンカに対してnon_camel_case_typeのエラーを出さないようにする
+
+pub enum AddressingMode {
+    Immidiate,  //PCの値をそのままアキュムレータ(a)に入れる。           LDA #$10 => A9 10     aに10を入れる
+    ZeroPage,   //アドレスの指す先の値を入れる                         LDA $10 => A5 10      aに0x10にある値を入れる
+    ZeroPage_X, //アドレス+xレジスタのアドレスの指す先の値を入れる       LDA $44,X => B5 44    aに0x44 + x 番目のアドレスにある値を入れる
+    ZeroPage_Y, //yレジスタバージョン　　                              LDX $44,Y => B6 44
+    Absolute,   //直接アドレスを指定してそのアドレスの指す先の値を入れる。LDA $4400 => AD 00 44  aに0x4400にある値を入れる
+    Absolute_X, //abusoluteにxレジスタの値分足したアドレスを指定する。   LDA $4400,X => BD 00 44
+    Absolute_Y, //yレジスタバージョン　　                              LDA $4400,Y => B9 00 44
+    Indirect_X,
+    Indirect_Y,
+    NoneAddressing,
+}
+
 pub struct CPU {
-    pub register_a: u8,
-    pub register_x: u8,
-    pub status: u8,
-    pub program_counter: u16,
-    memory: [u8; 0xFFFF]
+    pub register_a: u8,         //アキュムレータ
+    pub register_x: u8,         //汎用レジスタ
+    pub register_y: u8,         //汎用レジスタ
+    pub status: u8,             //フラグレジスタ
+    pub program_counter: u16,   //プログラムカウンタ。現在実行中の命令のアドレスを示す。
+    memory: [u8; 0x10000], //FIX 0xFFFF to 0x10000
 }
 
 impl CPU {
@@ -15,31 +32,86 @@ impl CPU {
         CPU {
             register_a: 0,
             register_x: 0,
+            register_y: 0,
             status: 0,
             program_counter: 0,
-            memory: [0x00; 0xFFFF],
+            memory: [0x00; 0x10000], 
         }
     }
 
-    //1バイト読む関数
+    fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
+        match mode {
+            AddressingMode::Immidiate => self.program_counter,
+            AddressingMode::ZeroPage => self.mem_read(self.program_counter) as u16,
+            AddressingMode::Absolute => self.mem_read_u16(self.program_counter),
+            AddressingMode::ZeroPage_X => {
+                let pos = self.mem_read(self.program_counter);
+                //wrapping_addはオーバーフローの制御。
+                //posにwrapping_addしてregister_xを足した結果のaddrが
+                //オーバーフローしてもエラーは出ずに切り捨てられた数値が入る
+                let addr = pos.wrapping_add(self.register_x) as u16;
+                addr
+            }
+            AddressingMode::ZeroPage_Y => {
+                let pos = self.mem_read(self.program_counter);
+                let addr = pos.wrapping_add(self.register_y) as u16;
+                addr
+            }
+            AddressingMode::Absolute_X => {
+                let base = self.mem_read_u16(self.program_counter);
+                let addr = base.wrapping_add(self.register_x as u16);
+                addr
+            }
+            AddressingMode::Absolute_Y => {
+                let base = self.mem_read_u16(self.program_counter);
+                let addr = base.wrapping_add(self.register_y as u16);
+                addr
+            }
+            AddressingMode::Indirect_X => {
+                let base = self.mem_read(self.program_counter);
+                let ptr: u8 = (base as u8).wrapping_add(self.register_x);
+                let lo = self.mem_read(ptr as u16);
+                let hi = self.mem_read(ptr.wrapping_add(1) as u16);
+                (hi as u16) << 8 | (lo as u16)
+            }
+            AddressingMode::Indirect_Y => {
+                let base = self.mem_read(self.program_counter);
+                let lo = self.mem_read(base as u16);
+                let hi = self.mem_read((base as u8).wrapping_add(1) as u16);
+                let deref_base = (hi as u16) << 8 | (lo as u16);
+                let deref = deref_base.wrapping_add(self.register_y as u16);
+                deref
+            }
+            AddressingMode::NoneAddressing => {
+                panic!("mode {:?} is not supported", mode);
+            }
+            
+        }
+    }
+
+    //指定したアドレス(addr)から1バイト(8bit)のデータを読む関数
     pub fn mem_read(&self, addr: u16) -> u8{
-        self.memory[addr as usize]
+        self.memory[addr as usize]  //usizeは32bit or 64bitの符号なし整数。プラットフォームに依存しない。
     }
 
+    //指定したアドレス(pos)から2バイト(16bit)のデータを読む関数
     pub fn mem_read_u16(&self, pos: u16)  -> u16{
-        let lo = self.mem_read(pos) as u16;
-        let hi = self.mem_read(pos+1) as u16;
-        (hi << 8) | (lo as u16)
+        let lo = self.mem_read(pos) as u16;     //アドレスposから1バイト目のデータを取得
+        let hi = self.mem_read(pos+1) as u16;   //アドレスpos+1から2バイト目のデータを取得
+        (hi << 8) | (lo as u16)                 //取得した二つのバイトを結合して返す
     }
 
-    //指定の番地にデータを書き込む
+    //指定したアドレス(addr)に1バイトのデータを書き込む
     pub fn mem_write(&mut self, addr: u16, data: u8){
         self.memory[addr as usize] = data;
     }
 
+    //指定したアドレス(pos)に2バイトのデータを書き込む
     pub fn mem_write_u16(&mut self, pos: u16, data: u16){
+        //16bitのデータ(data)を8bitのハイバイトとローバイトに分ける
         let hi = (data >> 8) as u8;
         let lo = (data & 0x00FF) as u8;
+
         self.mem_write(pos, lo);
         self.mem_write(pos+1,hi);
     }
@@ -50,19 +122,20 @@ impl CPU {
         self.run();
     }
 
-    pub fn reset(&mut self){
-        // FIXME テストのために一旦コメントアウト
-        // self.register_a = 0;
-        // self.register_x = 0; 
-        // self.status = 0;
-        self.program_counter = self.mem_read_u16(0xFFFC);
-    }
-
     pub fn load(&mut self, program: Vec<u8>){
         //8000番地から上にカートリッジ（ファミコンのカセット、プログラム）のデータを書き込む
         self.memory[0x8000 .. (0x8000 + program.len())].copy_from_slice(&program[..]);
         self.mem_write_u16(0xFFFC, 0x8000);
     }
+
+    pub fn reset(&mut self){
+        self.register_a = 0;
+        self.register_x = 0; 
+        self.register_y = 0; 
+        self.status = 0;
+        self.program_counter = self.mem_read_u16(0xFFFC);
+    }
+
 
     pub fn run(&mut self){
         loop {
@@ -116,12 +189,7 @@ impl CPU {
     // INX
     // X,Z,N = X+1  xレジスタに１を足す
     fn inx(&mut self){
-        if self.register_x == 0xFF {
-            self.register_x = 0;
-        }else{
-            self.register_x += 1;
-        }
-
+        self.register_x = self.register_x.wrapping_add(1);
         self.update_zero_and_negative_flags(self.register_x);
     }
 
@@ -152,7 +220,7 @@ impl CPU {
     }
 }
 
-#[cfg(test)]
+#[cfg(test)]    //cfgは条件付きコンパイル。テストするとき以外はこのモジュールはコンパイルしない
 mod test {
     use super::*;
 
@@ -186,9 +254,11 @@ mod test {
     #[test]
     fn test_0xaa_tax_move_a_to_x() {
         let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0xaa, 0x00]);
+        cpu.reset();
         // cpu.register_a = 10;
         cpu.register_a = 0x0A;
-        cpu.load_and_run(vec![0xaa, 0x00]);
+        cpu.run();
         assert_eq!(cpu.register_x, 0x0A);
     }
 
@@ -206,8 +276,10 @@ mod test {
     #[test]
     fn test_inx_overflow(){
         let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0xe8, 0xe8, 0x00]);
+        cpu.reset();
         cpu.register_x = 0xff;
-        cpu.load_and_run(vec![0xe8, 0xe8, 0x00]);
+        cpu.run();
         assert_eq!(cpu.register_x, 1);
     }
 }
