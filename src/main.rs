@@ -222,6 +222,12 @@ impl CPU {
                     self.program_counter += 1;
                 }
 
+                // ADC
+                0x69 => {
+                    self.adc(&AddressingMode::Immidiate);
+                    self.program_counter += 1;
+                }
+
                  _ => todo!("")
             }
         }
@@ -257,6 +263,37 @@ impl CPU {
     fn sta(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         self.mem_write(addr, self.register_a);
+    }
+
+    // ADC
+    // A,Z,C,N = A+M+C
+    fn adc(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);  //memory
+        let value = self.mem_read(addr);            //memoryの値
+
+        let carry = self.status & 0x01;
+        let (rhs, carry_flag1) = value.overflowing_add(carry);     //桁溢れが生じたらflagがtrue
+        let (n, carry_flag2) = self.register_a.overflowing_add(rhs);
+
+        let overflow = (self.register_a & 0x80) == (value & 0x80) 
+                       && (value & 0x80) != (n & 0x80);
+
+        self.register_a = n;
+
+        self.status = if carry_flag1 || carry_flag2 { //どちらかのキャリーフラグが立っている場合
+            self.status | 0x01   //carryのビットは0000-0001
+        } else {
+            self.status & 0xfe   //carry以外のビット1111-1110
+        };
+
+        self.status = if overflow {
+            self.status | 0x40   //overflowのビットは0100-0000
+        } else {
+            self.status & 0xbf   //overflow以外のビット1011-1111
+        };
+
+        self.update_zero_and_negative_flags(self.register_a);
+
     }
 
     fn update_zero_and_negative_flags(&mut self, result: u8){
@@ -438,5 +475,104 @@ mod test {
         cpu.register_a = 0xba;
         cpu.run();
         assert_eq!(cpu.mem_read(0x10), 0xba);
+    }
+
+    #[test]
+    //carry flagが立ってない場合
+    fn test_adc_no_carry() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0x69,0x10,0x00]);
+        cpu.reset();
+        cpu.register_a = 0x20;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x30);
+        assert_eq!(cpu.status, 0x00);
+    }
+
+    #[test]
+    //carry flagが立っている場合
+    fn test_adc_has_carry() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0x69,0x10,0x00]);
+        cpu.reset();
+        cpu.register_a = 0x20;
+        cpu.status = 0x01;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x31); //carryフラグの値も足すので0x30 + 0x01
+        assert_eq!(cpu.status, 0x00);  //計算で桁あふれが生じないのでフラグは立たない
+    }
+
+    #[test]
+    //carry flagが起こる場合
+    fn test_adc_occur_carry() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0x69,0x02,0x00]);
+        cpu.reset();
+        cpu.register_a = 0xff;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x01); //0xff + 0x02で桁あふれが生じる
+        assert_eq!(cpu.status, 0x01);  //桁あふれが生じたのでcarryflagが立つ
+    }
+
+    #[test]
+    //プラスの計算でoverflowが起こる場合
+    fn test_adc_occur_overflow_plus() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0x69,0x10,0x00]);
+        cpu.reset();
+        cpu.register_a = 0x7f;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x8f); //00010000 + 01111111 = 10001111
+        assert_eq!(cpu.status, 0xc0);  //正＋正で負のビットが立ったのでoverflowが立つ. negativeフラグも立つ。よってstatus = 1100-0000
+    }
+
+    #[test]
+    //carryが立っていてプラスの計算でoverflowが起こる場合
+    fn test_adc_occur_overflow_plus_with_carry() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0x69,0x6f,0x00]);
+        cpu.reset();
+        cpu.register_a = 0x10;
+        cpu.status = 0x01;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x80);
+        assert_eq!(cpu.status, 0xc0);  //正＋正で負のビットが立ったのでoverflowが立つ. negativeフラグも立つ。よってstatus = 1100-0000
+    }
+
+    #[test]
+    //マイナスの計算でoverflowが起こる場合
+    fn test_adc_occur_overflow_minus() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0x69,0x81,0x00]);
+        cpu.reset();
+        cpu.register_a = 0x81;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x02); //1000,0001 + 1000,0001 = 0000,0002 (1,0000,0002)
+        assert_eq!(cpu.status, 0x41);  //負＋負で正になっているのでoverflowが立つ。桁もあふれたのでcarryも立つ
+    }
+
+    #[test]
+    //carryが立っていてマイナスの計算でoverflowが起こる場合
+    fn test_adc_occur_overflow_minus_with_carry() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0x69,0x80,0x00]);
+        cpu.reset();
+        cpu.register_a = 0x80;
+        cpu.status = 0x01;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x01); //1000,0000 + 1000,0000 = 0000,0000 これに1足す。
+        assert_eq!(cpu.status, 0x41);  //overflowとcarryが立つ
+    }
+
+    #[test]
+    //符号が違うものを足す場合
+    fn test_adc_occur_no_overflow() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0x69,0x7f,0x00]);
+        cpu.reset();
+        cpu.register_a = 0x82;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x01);
+        assert_eq!(cpu.status, 0x01);  //carryが立つ
     }
 }
