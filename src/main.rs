@@ -228,6 +228,13 @@ impl CPU {
                     self.program_counter += 1;
                 }
 
+
+                // SBC
+                0xE9 => {
+                    self.sbc(&AddressingMode::Immidiate);
+                    self.program_counter += 1;
+                }
+
                  _ => todo!("")
             }
         }
@@ -281,6 +288,40 @@ impl CPU {
         self.register_a = n;
 
         self.status = if carry_flag1 || carry_flag2 { //どちらかのキャリーフラグが立っている場合
+            self.status | 0x01   //carryのビットは0000-0001
+        } else {
+            self.status & 0xfe   //carry以外のビット1111-1110
+        };
+
+        self.status = if overflow {
+            self.status | 0x40   //overflowのビットは0100-0000
+        } else {
+            self.status & 0xbf   //overflow以外のビット1011-1111
+        };
+
+        self.update_zero_and_negative_flags(self.register_a);
+
+    }
+
+    // SBC
+    // A,Z,C,N = A-M-(1-C)
+    fn sbc(&mut self, mode: &AddressingMode) {
+        //キャリーかどうかの判定が逆
+        //overflowの判定が逆  minus.plusかplus.minus
+
+        let addr = self.get_operand_address(mode);  //memory
+        let value = self.mem_read(addr);            //memoryの値
+
+        let carry = self.status & 0x01;
+        let (v1, carry_flag1) = self.register_a.overflowing_sub(value); //A-M
+        let (n, carry_flag2) = v1.overflowing_sub(1-carry);
+
+        let overflow = (self.register_a & 0x80) != (value & 0x80) 
+                       && (self.register_a & 0x80) != (n & 0x80);
+
+        self.register_a = n;
+
+        self.status = if !(carry_flag1 || carry_flag2) { 
             self.status | 0x01   //carryのビットは0000-0001
         } else {
             self.status & 0xfe   //carry以外のビット1111-1110
@@ -574,5 +615,76 @@ mod test {
         cpu.run();
         assert_eq!(cpu.register_a, 0x01);
         assert_eq!(cpu.status, 0x01);  //carryが立つ
+    }
+
+
+    #[test]
+    fn test_sbc_no_carry() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0xe9,0x10,0x00]);
+        cpu.reset();
+        cpu.register_a = 0x20;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x0f); //c=0より1-c=1なので0x10から1引いて0x0f
+        assert_eq!(cpu.status, 0x01);  //carry判定じゃなければ立つので、立つ
+    }
+
+
+    #[test]
+    fn test_sbc_has_carry() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0xe9,0x10,0x00]);
+        cpu.reset();
+        cpu.register_a = 0x20;
+        cpu.status = 0x01;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0x10); 
+        assert_eq!(cpu.status, 0x01);  //carry判定じゃなければ立つので、立つ
+    }
+
+    #[test]
+    fn test_sbc_occur_carry() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0xe9,0x02,0x00]);
+        cpu.reset();
+        cpu.register_a = 0x01;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0xfe); //0x01 - 0x02 - (0x01 - 0)
+        assert_eq!(cpu.status, 0x80); //negative flag
+    }
+
+    #[test]
+    fn test_sbc_occur_overflow() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0xe9,0x81,0x00]);
+        cpu.reset();
+        cpu.register_a = 0x7f;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0xfd);
+        assert_eq!(cpu.status, 0xc0); //negative flag, overflow
+    }
+
+    #[test]
+    fn test_sbc_occur_overflow_with_carry() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0xe9,0x81,0x00]);
+        cpu.reset();
+        cpu.register_a = 0x7f;
+        cpu.status = 0x01;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0xfe);
+        assert_eq!(cpu.status, 0xc0); //negative flag, overflow
+    }
+
+    #[test]
+    fn test_sbc_no_overflow() {
+        let mut cpu: CPU = CPU::new();
+        cpu.load(vec![0xe9,0x7f,0x00]);
+        cpu.reset();
+        cpu.register_a = 0x7e;
+        cpu.status = 0x01;
+        cpu.run();
+        assert_eq!(cpu.register_a, 0xff);
+        assert_eq!(cpu.status, 0x80);
     }
 }
