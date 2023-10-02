@@ -245,6 +245,24 @@ impl CPU {
                     self.program_counter += 1;
                 }
 
+                // AND
+                0x29 => {
+                    self.and(&AddressingMode::Immidiate);
+                    self.program_counter += 1;
+                }
+
+                // EOR
+                0x49 => {
+                    self.eor(&AddressingMode::Immidiate);
+                    self.program_counter += 1;
+                }
+
+                // ORA
+                0x09 => {
+                    self.ora(&AddressingMode::Immidiate);
+                    self.program_counter += 1;
+                }
+
                  _ => todo!("")
             }
         }
@@ -345,6 +363,36 @@ impl CPU {
 
         self.update_zero_and_negative_flags(self.register_a);
 
+    }
+
+    // AND
+    // A,Z,N = A&M
+    fn and(&mut self, mode:&AddressingMode){
+        let addr = self.get_operand_address(mode);  //memory
+        let value = self.mem_read(addr);            //memoryの値
+
+        self.register_a = self.register_a & value;
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    // EOR
+    // A,Z,N = A^M  exclusive or
+    fn eor(&mut self, mode:&AddressingMode){
+        let addr = self.get_operand_address(mode);  //memory
+        let value = self.mem_read(addr);            //memoryの値
+
+        self.register_a = self.register_a ^ value;
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    // ORA
+    // A,Z,N = A|M 
+    fn ora(&mut self, mode:&AddressingMode){
+        let addr = self.get_operand_address(mode);  //memory
+        let value = self.mem_read(addr);            //memoryの値
+
+        self.register_a = self.register_a | value;
+        self.update_zero_and_negative_flags(self.register_a);
     }
 
     fn update_zero_and_negative_flags(&mut self, result: u8){
@@ -640,5 +688,32 @@ mod test {
         });
         assert_eq!(cpu.register_a, 0xff);
         assert_status(cpu, FLAG_NEGATIVE);
+    }
+
+    #[test]
+    fn test_and() {
+        let cpu = run(vec![0x29,0x01,0x00], |cpu| {
+            cpu.register_a = 0x03;
+        });
+        assert_eq!(cpu.register_a, 0x01);
+        assert_status(cpu, 0);
+    }
+
+    #[test]
+    fn test_eor() {
+        let cpu = run(vec![0x49,0x01,0x00], |cpu| {
+            cpu.register_a = 0x03;
+        });
+        assert_eq!(cpu.register_a, 0x02);
+        assert_status(cpu, 0);
+    }
+
+    #[test]
+    fn test_ora() {
+        let cpu = run(vec![0x09,0x01,0x00], |cpu| {
+            cpu.register_a = 0x03;
+        });
+        assert_eq!(cpu.register_a, 0x03);
+        assert_status(cpu, 0);
     }
 }
