@@ -18,6 +18,14 @@ pub enum AddressingMode {
     NoneAddressing,
 }
 
+const FLAG_CARRY:u8 = 1;            //0b00000001, 0x01
+const FLAG_ZERO:u8 = 1 << 1;        //0b00000010, 0x02
+const FLAG_INTERRUCT:u8 = 1 << 2;   //0b00000100, 0x04
+const FLAG_DECIMAL:u8 = 1 << 3;     //0b00001000, 0x08
+const FLAG_BREAK:u8 = 1 << 4;       //0b00010000, 0x10
+const FLAG_OVERFLOW:u8 = 1 << 6;    //0b01000000, 0x40
+const FLAG_NEGATIVE:u8 = 1 << 7;    //0b10000000, 0x80
+
 pub struct CPU {
     pub register_a: u8,         //アキュムレータ
     pub register_x: u8,         //汎用レジスタ
@@ -278,7 +286,7 @@ impl CPU {
         let addr = self.get_operand_address(mode);  //memory
         let value = self.mem_read(addr);            //memoryの値
 
-        let carry = self.status & 0x01;
+        let carry = self.status & FLAG_CARRY;
         let (rhs, carry_flag1) = value.overflowing_add(carry);     //桁溢れが生じたらflagがtrue
         let (n, carry_flag2) = self.register_a.overflowing_add(rhs);
 
@@ -288,15 +296,15 @@ impl CPU {
         self.register_a = n;
 
         self.status = if carry_flag1 || carry_flag2 { //どちらかのキャリーフラグが立っている場合
-            self.status | 0x01   //carryのビットは0000-0001
+            self.status | FLAG_CARRY
         } else {
-            self.status & 0xfe   //carry以外のビット1111-1110
+            self.status & !FLAG_CARRY
         };
 
         self.status = if overflow {
-            self.status | 0x40   //overflowのビットは0100-0000
+            self.status | FLAG_OVERFLOW
         } else {
-            self.status & 0xbf   //overflow以外のビット1011-1111
+            self.status & !FLAG_OVERFLOW
         };
 
         self.update_zero_and_negative_flags(self.register_a);
@@ -312,7 +320,7 @@ impl CPU {
         let addr = self.get_operand_address(mode);  //memory
         let value = self.mem_read(addr);            //memoryの値
 
-        let carry = self.status & 0x01;
+        let carry = self.status & FLAG_CARRY;
         let (v1, carry_flag1) = self.register_a.overflowing_sub(value); //A-M
         let (n, carry_flag2) = v1.overflowing_sub(1-carry);
 
@@ -322,15 +330,15 @@ impl CPU {
         self.register_a = n;
 
         self.status = if !(carry_flag1 || carry_flag2) { 
-            self.status | 0x01   //carryのビットは0000-0001
+            self.status | FLAG_CARRY
         } else {
-            self.status & 0xfe   //carry以外のビット1111-1110
+            self.status & !FLAG_CARRY
         };
 
         self.status = if overflow {
-            self.status | 0x40   //overflowのビットは0100-0000
+            self.status | FLAG_OVERFLOW
         } else {
-            self.status & 0xbf   //overflow以外のビット1011-1111
+            self.status & !FLAG_OVERFLOW
         };
 
         self.update_zero_and_negative_flags(self.register_a);
@@ -340,26 +348,16 @@ impl CPU {
     fn update_zero_and_negative_flags(&mut self, result: u8){
         // zero flag
         if result == 0 {
-            //1bit目(左から2個目、Z)に1が立つ。orで取ると1bitが必ず1が立つ。
-            // self.status = self.status | 0b0000_0010;
-            self.status = self.status | 0x02;
+            self.status = self.status | FLAG_ZERO;
         } else {
-            //zero flagが０じゃない場合、1bit目を０にして、それ以外はそのまま
-            // self.status = self.status & 0b1111_1101;
-            self.status = self.status & 0xFD;
+            self.status = self.status & !FLAG_ZERO;
         }
 
         // negative flag
-        // 7bit目が１のとき（negative flagが立っているとき）
-        // if result & 0b1000_0000 != 0 
         if result & 0x80 != 0 {
-            // 7bit目に１を立ててそれ以外はそのまま。
-            // self.status = self.status | 0b1000_0000;
-            self.status = self.status | 0x80;
+            self.status = self.status | FLAG_NEGATIVE;
         } else {
-            // 7bit目を０にして他はそのまま。
-            // self.status = self.status & 0b0111_1111;
-            self.status = self.status & 0x7F;
+            self.status = self.status & !FLAG_NEGATIVE;
         }
     }
 }
