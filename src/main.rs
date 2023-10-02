@@ -26,6 +26,8 @@ const FLAG_BREAK:u8 = 1 << 4;       //0b00010000, 0x10
 const FLAG_OVERFLOW:u8 = 1 << 6;    //0b01000000, 0x40
 const FLAG_NEGATIVE:u8 = 1 << 7;    //0b10000000, 0x80
 
+const SIGN_BIT:u8 = 1 << 7;
+
 pub struct CPU {
     pub register_a: u8,         //アキュムレータ
     pub register_x: u8,         //汎用レジスタ
@@ -290,8 +292,8 @@ impl CPU {
         let (rhs, carry_flag1) = value.overflowing_add(carry);     //桁溢れが生じたらflagがtrue
         let (n, carry_flag2) = self.register_a.overflowing_add(rhs);
 
-        let overflow = (self.register_a & 0x80) == (value & 0x80) 
-                       && (value & 0x80) != (n & 0x80);
+        let overflow = (self.register_a & SIGN_BIT) == (value & SIGN_BIT) 
+                       && (value & SIGN_BIT) != (n & SIGN_BIT);
 
         self.register_a = n;
 
@@ -324,8 +326,8 @@ impl CPU {
         let (v1, carry_flag1) = self.register_a.overflowing_sub(value); //A-M
         let (n, carry_flag2) = v1.overflowing_sub(1-carry);
 
-        let overflow = (self.register_a & 0x80) != (value & 0x80) 
-                       && (self.register_a & 0x80) != (n & 0x80);
+        let overflow = (self.register_a & SIGN_BIT) != (value & SIGN_BIT) 
+                       && (self.register_a & SIGN_BIT) != (n & SIGN_BIT);
 
         self.register_a = n;
 
@@ -366,164 +368,144 @@ impl CPU {
 mod test {
     use super::*;
 
-    // 0x~~は16進数表記 0b~~は2進数表記
+    fn run<F>(program: Vec<u8>, f:F) -> CPU
+    where
+        F: Fn(&mut CPU),
+        {
+            let mut cpu = CPU::new();
+            cpu.load(program);
+            cpu.reset();
+            f(&mut cpu);
+            cpu.run();
+
+            cpu
+        }
+
+    fn assert_status(cpu: CPU, flags: u8) {
+        assert_eq!(cpu.status, flags)
+    }
 
     #[test]
     fn test_0xa9_lda_immidiate_load_data() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load_and_run(vec![0xa9, 0x05, 0x00]);
+        let cpu = run(vec![0xa9, 0x05, 0x00], |_| {});
         assert_eq!(cpu.register_a, 0x05);
-        // assert!(cpu.status & 0b0000_0010 == 0b00);
-        assert!(cpu.status & 0x02 == 0x00);
-        // assert!(cpu.status & 0b1000_0000 == 0);
-        assert!(cpu.status & 0x80 == 0);
+        assert_status(cpu,0);
     }
 
     #[test]
     fn test_0xa9_lda_zero_flag() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load_and_run(vec![0xa9, 0x00, 0x00]);
-        // assert!(cpu.status & 0b0000_0010 == 0b10);
-        assert!(cpu.status & 0x02 == 0x02);
+        let cpu = run(vec![0xa9, 0x00, 0x00], |_| {});
+        assert_status(cpu,FLAG_ZERO);
     }
 
     #[test]
     fn test_0xa9_lda_negative_flag() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load_and_run(vec![0xa9, 0x80, 0x00]);
-        // assert!(cpu.status & 0b1000_0000 != 0);
-        assert!(cpu.status & 0x80 == 0x80);
+        let cpu = run(vec![0xa9, 0x80, 0x00], |_| {});
+        assert_status(cpu, FLAG_NEGATIVE);
     }
 
     #[test]
     fn test_0xaa_tax_move_a_to_x() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0xaa, 0x00]);
-        cpu.reset();
-        // cpu.register_a = 10;
-        cpu.register_a = 0x0A;
-        cpu.run();
+        let cpu = run(vec![0xaa, 0x00], |cpu| {
+            cpu.register_a = 0x0A;
+        });
         assert_eq!(cpu.register_x, 0x0A);
     }
 
     #[test]
     fn test_5_ops_working_together() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load_and_run(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00]);
-        // 0xa9, 0xc0でアキュムレータにに0xc0をロード
-        // 0xaaでxレジスタにアキュムレータの値を代入
-        // 0xe8でxレジスタの値を1だけインクリメント
-        // 0x00でbreak
+        //0xe8はinx
+        let cpu = run(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00], |_| {});
         assert_eq!(cpu.register_x, 0xc1);
     }
 
     #[test]
     fn test_inx_overflow(){
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0xe8, 0xe8, 0x00]);
-        cpu.reset();
-        cpu.register_x = 0xff;
-        cpu.run();
-        assert_eq!(cpu.register_x, 1);
+        let cpu = run(vec![0xe8, 0xe8, 0x00], |cpu| {
+            cpu.register_x = 0xff;
+        });
+        assert_eq!(cpu.register_x, 0x01);
     }
 
     #[test]
     fn test_lda_from_memory_zero_page() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0xa5,0x10,0x00]);
-        cpu.reset();
-        cpu.mem_write(0x10,0x55);               //メモリの0x10番地に0x55を書き込む
-        cpu.run();
+        let cpu = run(vec![0xa5,0x10,0x00], |cpu| {
+            cpu.mem_write(0x10,0x55);  //メモリの0x10番地に0x55を書き込む
+        });
         assert_eq!(cpu.register_a, 0x55)
     }
 
     #[test]
     fn test_lda_from_memory_zero_page_x() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0xb5,0x10,0x00]);
-        cpu.reset();
-        cpu.mem_write(0x11,0x56);
-        cpu.register_x = 0x01;
-        cpu.run();
+        let cpu = run(vec![0xb5,0x10,0x00], |cpu| {
+            cpu.mem_write(0x11,0x56);
+            cpu.register_x = 0x01;
+        });
         assert_eq!(cpu.register_a, 0x56);
     }
 
     #[test]
     fn test_lda_from_memory_absolute() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0xad,0x10,0xaa,0x00]);
-        cpu.reset();
+        let cpu = run(vec![0xad,0x10,0xaa,0x00], |cpu| {
         cpu.mem_write(0xaa10,0x57);
-        cpu.run();
+        });
         assert_eq!(cpu.register_a, 0x57);
     }
 
     #[test]
     fn test_lda_from_memory_absolute_x() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0xbd,0x10,0xaa,0x00]);
-        cpu.reset();
-        cpu.mem_write(0xaa15,0x58);
-        cpu.register_x = 0x05;
-        cpu.run();
+        let cpu = run(vec![0xbd,0x10,0xaa,0x00], |cpu| {
+            cpu.mem_write(0xaa15,0x58);
+            cpu.register_x = 0x05;
+        });
         assert_eq!(cpu.register_a, 0x58);
     }
 
     #[test]
     fn test_lda_from_memory_absolute_y() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0xb9,0x10,0xaa,0x00]);
-        cpu.reset();
-        cpu.mem_write(0xaa18,0x59);
-        cpu.register_y = 0x08;
-        cpu.run();
+        let cpu = run(vec![0xb9,0x10,0xaa,0x00], |cpu| {
+            cpu.mem_write(0xaa18,0x59);
+            cpu.register_y = 0x08;
+        });
         assert_eq!(cpu.register_a, 0x59);
     }
 
     #[test]
     fn test_lda_from_memory_indirect_x() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0xa1,0x10,0x00]);
-        cpu.reset();
-        cpu.mem_write(0x18,0x05);   //0x10にregisterxを足した番地を読む(low byte)
-        cpu.mem_write(0x19,0xff);   //その次の番地(0x19)も読む(high byte)
-        cpu.mem_write(0xff05,0x5a); //lowとhighを結合した番地に値を書き込んでおく(これがアキュムレータにロードされる)
-        cpu.register_x = 0x08;
-        cpu.run();
+        let cpu = run(vec![0xa1,0x10,0x00], |cpu| {
+            cpu.mem_write(0x18,0x05);   //0x10にregisterxを足した番地を読む(low byte)
+            cpu.mem_write(0x19,0xff);   //その次の番地(0x19)も読む(high byte)
+            cpu.mem_write(0xff05,0x5a); //lowとhighを結合した番地に値を書き込んでおく(これがアキュムレータにロードされる)
+            cpu.register_x = 0x08;
+        });
         assert_eq!(cpu.register_a, 0x5a); //二つの番地から取ったものを足した番地のところの値をアキュムレータがロードする
     }
 
     #[test]
     fn test_lda_from_memory_indirect_y() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0xb1,0x10,0x00]);
-        cpu.reset();
-        cpu.mem_write(0x10,0x06);   //0x10番地を読む(low byte)
-        cpu.mem_write(0x11,0xff);   //その次の番地(0x11)も読む(high byte)
-        cpu.mem_write(0xff09,0x5b); //lowとhighを結合した番地にyを足した番地に値を書き込んでおく(これがアキュムレータにロードされる)
-        cpu.register_y = 0x03;
-        cpu.run();
+        let cpu = run(vec![0xb1,0x10,0x00], |cpu| {
+            cpu.mem_write(0x10,0x06);   //0x10番地を読む(low byte)
+            cpu.mem_write(0x11,0xff);   //その次の番地(0x11)も読む(high byte)
+            cpu.mem_write(0xff09,0x5b); //lowとhighを結合した番地にyを足した番地に値を書き込んでおく(これがアキュムレータにロードされる)
+            cpu.register_y = 0x03;
+        });
         assert_eq!(cpu.register_a, 0x5b); //結合した番地の値をアキュムレータがロードする
     }
 
     #[test]
     fn test_sta_from_memory() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0x85,0x10,0x00]);
-        cpu.reset();
-        cpu.register_a = 0xba;
-        cpu.run();
+        let cpu = run(vec![0x85,0x10,0x00], |cpu| {
+            cpu.register_a = 0xba;
+        });
         assert_eq!(cpu.mem_read(0x10), 0xba);
     }
 
     #[test]
     //carry flagが立ってない場合
     fn test_adc_no_carry() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0x69,0x10,0x00]);
-        cpu.reset();
-        cpu.register_a = 0x20;
-        cpu.run();
+        let cpu = run(vec![0x69,0x10,0x00], |cpu| {
+            cpu.register_a = 0x20;
+        });
         assert_eq!(cpu.register_a, 0x30);
         assert_eq!(cpu.status, 0x00);
     }
@@ -531,12 +513,10 @@ mod test {
     #[test]
     //carry flagが立っている場合
     fn test_adc_has_carry() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0x69,0x10,0x00]);
-        cpu.reset();
-        cpu.register_a = 0x20;
-        cpu.status = 0x01;
-        cpu.run();
+        let cpu = run(vec![0x69,0x10,0x00], |cpu| {
+            cpu.register_a = 0x20;
+            cpu.status = 0x01;
+        });
         assert_eq!(cpu.register_a, 0x31); //carryフラグの値も足すので0x30 + 0x01
         assert_eq!(cpu.status, 0x00);  //計算で桁あふれが生じないのでフラグは立たない
     }
@@ -544,145 +524,121 @@ mod test {
     #[test]
     //carry flagが起こる場合
     fn test_adc_occur_carry() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0x69,0x02,0x00]);
-        cpu.reset();
-        cpu.register_a = 0xff;
-        cpu.run();
+        let cpu = run(vec![0x69,0x02,0x00], |cpu| {
+            cpu.register_a = 0xff;
+        });
         assert_eq!(cpu.register_a, 0x01); //0xff + 0x02で桁あふれが生じる
-        assert_eq!(cpu.status, 0x01);  //桁あふれが生じたのでcarryflagが立つ
+        assert_eq!(cpu.status, FLAG_CARRY);  //桁あふれが生じたのでcarryflagが立つ
     }
 
     #[test]
     //プラスの計算でoverflowが起こる場合
     fn test_adc_occur_overflow_plus() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0x69,0x10,0x00]);
-        cpu.reset();
-        cpu.register_a = 0x7f;
-        cpu.run();
+        let cpu = run(vec![0x69,0x10,0x00], |cpu| {
+            cpu.register_a = 0x7f;       
+        });
         assert_eq!(cpu.register_a, 0x8f); //00010000 + 01111111 = 10001111
-        assert_eq!(cpu.status, 0xc0);  //正＋正で負のビットが立ったのでoverflowが立つ. negativeフラグも立つ。よってstatus = 1100-0000
+        assert_eq!(cpu.status, FLAG_OVERFLOW | FLAG_NEGATIVE);  //正＋正で負のビットが立ったのでoverflowが立つ. negativeフラグも立つ。
     }
 
     #[test]
     //carryが立っていてプラスの計算でoverflowが起こる場合
     fn test_adc_occur_overflow_plus_with_carry() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0x69,0x6f,0x00]);
-        cpu.reset();
-        cpu.register_a = 0x10;
-        cpu.status = 0x01;
-        cpu.run();
+        let cpu = run(vec![0x69,0x6f,0x00], |cpu| {
+            cpu.register_a = 0x10;
+            cpu.status = 0x01;
+        });
         assert_eq!(cpu.register_a, 0x80);
-        assert_eq!(cpu.status, 0xc0);  //正＋正で負のビットが立ったのでoverflowが立つ. negativeフラグも立つ。よってstatus = 1100-0000
+        assert_eq!(cpu.status, FLAG_OVERFLOW | FLAG_NEGATIVE);  //正＋正で負のビットが立ったのでoverflowが立つ. negativeフラグも立つ。
     }
 
     #[test]
     //マイナスの計算でoverflowが起こる場合
     fn test_adc_occur_overflow_minus() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0x69,0x81,0x00]);
-        cpu.reset();
-        cpu.register_a = 0x81;
-        cpu.run();
+        let cpu = run(vec![0x69,0x81,0x00], |cpu| {
+            cpu.register_a = 0x81;
+        });
         assert_eq!(cpu.register_a, 0x02); //1000,0001 + 1000,0001 = 0000,0002 (1,0000,0002)
-        assert_eq!(cpu.status, 0x41);  //負＋負で正になっているのでoverflowが立つ。桁もあふれたのでcarryも立つ
+        assert_eq!(cpu.status, FLAG_OVERFLOW | FLAG_CARRY);  //負＋負で正になっているのでoverflowが立つ。桁もあふれたのでcarryも立つ
     }
 
     #[test]
     //carryが立っていてマイナスの計算でoverflowが起こる場合
     fn test_adc_occur_overflow_minus_with_carry() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0x69,0x80,0x00]);
-        cpu.reset();
-        cpu.register_a = 0x80;
-        cpu.status = 0x01;
-        cpu.run();
+        let cpu = run(vec![0x69,0x80,0x00], |cpu| {
+            cpu.register_a = 0x80;
+            cpu.status = 0x01;
+        });
         assert_eq!(cpu.register_a, 0x01); //1000,0000 + 1000,0000 = 0000,0000 これに1足す。
-        assert_eq!(cpu.status, 0x41);  //overflowとcarryが立つ
+        assert_eq!(cpu.status, FLAG_OVERFLOW | FLAG_CARRY);  //overflowとcarryが立つ
     }
 
     #[test]
     //符号が違うものを足す場合
     fn test_adc_occur_no_overflow() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0x69,0x7f,0x00]);
-        cpu.reset();
-        cpu.register_a = 0x82;
-        cpu.run();
+        let cpu = run(vec![0x69,0x7f,0x00], |cpu| {
+            cpu.register_a = 0x82;
+        });
         assert_eq!(cpu.register_a, 0x01);
-        assert_eq!(cpu.status, 0x01);  //carryが立つ
+        assert_eq!(cpu.status, FLAG_CARRY);  //carryが立つ
     }
 
 
     #[test]
     fn test_sbc_no_carry() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0xe9,0x10,0x00]);
-        cpu.reset();
-        cpu.register_a = 0x20;
-        cpu.run();
+        let cpu = run(vec![0xe9,0x10,0x00], |cpu| {
+            cpu.register_a = 0x20;
+        });
         assert_eq!(cpu.register_a, 0x0f); //c=0より1-c=1なので0x10から1引いて0x0f
-        assert_eq!(cpu.status, 0x01);  //carry判定じゃなければ立つので、立つ
+        assert_eq!(cpu.status, FLAG_CARRY);  //carry判定じゃなければ立つので、立つ
     }
 
 
     #[test]
     fn test_sbc_has_carry() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0xe9,0x10,0x00]);
-        cpu.reset();
-        cpu.register_a = 0x20;
-        cpu.status = 0x01;
-        cpu.run();
+        let cpu = run(vec![0xe9,0x10,0x00], |cpu| {
+            cpu.register_a = 0x20;
+            cpu.status = 0x01;
+        });
         assert_eq!(cpu.register_a, 0x10); 
-        assert_eq!(cpu.status, 0x01);  //carry判定じゃなければ立つので、立つ
+        assert_eq!(cpu.status, FLAG_CARRY);  //carry判定じゃなければ立つので、立つ
     }
 
     #[test]
     fn test_sbc_occur_carry() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0xe9,0x02,0x00]);
-        cpu.reset();
-        cpu.register_a = 0x01;
-        cpu.run();
+        let cpu = run(vec![0xe9,0x02,0x00], |cpu| {
+            cpu.register_a = 0x01;
+        });
         assert_eq!(cpu.register_a, 0xfe); //0x01 - 0x02 - (0x01 - 0)
-        assert_eq!(cpu.status, 0x80); //negative flag
+        assert_eq!(cpu.status, FLAG_NEGATIVE);
     }
 
     #[test]
     fn test_sbc_occur_overflow() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0xe9,0x81,0x00]);
-        cpu.reset();
-        cpu.register_a = 0x7f;
-        cpu.run();
+        let cpu = run(vec![0xe9,0x81,0x00], |cpu| {
+            cpu.register_a = 0x7f;
+        });
         assert_eq!(cpu.register_a, 0xfd);
-        assert_eq!(cpu.status, 0xc0); //negative flag, overflow
+        assert_eq!(cpu.status, FLAG_OVERFLOW | FLAG_NEGATIVE); //negative flag, overflow
     }
 
     #[test]
     fn test_sbc_occur_overflow_with_carry() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0xe9,0x81,0x00]);
-        cpu.reset();
-        cpu.register_a = 0x7f;
-        cpu.status = 0x01;
-        cpu.run();
+        let cpu = run(vec![0xe9,0x81,0x00], |cpu| {
+            cpu.register_a = 0x7f;
+            cpu.status = 0x01;
+        });
         assert_eq!(cpu.register_a, 0xfe);
-        assert_eq!(cpu.status, 0xc0); //negative flag, overflow
+        assert_eq!(cpu.status, FLAG_OVERFLOW | FLAG_NEGATIVE); //negative flag, overflow
     }
 
     #[test]
     fn test_sbc_no_overflow() {
-        let mut cpu: CPU = CPU::new();
-        cpu.load(vec![0xe9,0x7f,0x00]);
-        cpu.reset();
-        cpu.register_a = 0x7e;
-        cpu.status = 0x01;
-        cpu.run();
+        let cpu = run(vec![0xe9,0x7f,0x00], |cpu| {
+            cpu.register_a = 0x7e;
+            cpu.status = FLAG_CARRY;
+        });
         assert_eq!(cpu.register_a, 0xff);
-        assert_eq!(cpu.status, 0x80);
+        assert_status(cpu, FLAG_NEGATIVE);
     }
 }
