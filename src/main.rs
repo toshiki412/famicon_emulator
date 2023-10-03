@@ -6,6 +6,7 @@ fn main() {
 #[allow(non_camel_case_types)]  //allowはリンカに対してnon_camel_case_typeのエラーを出さないようにする
 
 pub enum AddressingMode {
+    Accumulator,
     Immidiate,  //PCの値をそのままアキュムレータ(a)に入れる。           LDA #$10 => A9 10     aに10を入れる
     ZeroPage,   //アドレスの指す先の値を入れる                         LDA $10 => A5 10      aに0x10にある値を入れる
     ZeroPage_X, //アドレス+xレジスタのアドレスの指す先の値を入れる       LDA $44,X => B5 44    aに0x44 + x 番目のアドレスにある値を入れる
@@ -51,6 +52,9 @@ impl CPU {
 
     fn get_operand_address(&self, mode: &AddressingMode) -> u16 {
         match mode {
+            AddressingMode::Accumulator => {
+                panic!("AddressingMode::Accumulator");
+            }
             AddressingMode::Immidiate => self.program_counter,
             AddressingMode::ZeroPage => self.mem_read(self.program_counter) as u16,
             AddressingMode::Absolute => self.mem_read_u16(self.program_counter),
@@ -263,6 +267,16 @@ impl CPU {
                     self.program_counter += 1;
                 }
 
+                // ASL
+                0x06 => {
+                    self.asl(&AddressingMode::ZeroPage);
+                    self.program_counter += 1;
+                }
+
+                0x0A => {
+                    self.asl(&AddressingMode::Accumulator);
+                }
+
                  _ => todo!("")
             }
         }
@@ -393,6 +407,33 @@ impl CPU {
 
         self.register_a = self.register_a | value;
         self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    // ASL
+    // A,Z,C,N = A*2  or M,Z,C,N = M*2
+    fn asl(&mut self, mode:&AddressingMode){
+        let (value,carry) = match mode {
+            AddressingMode::Accumulator => {
+                let (value,carry) = self.register_a.overflowing_mul(2);
+                self.register_a = value;
+                (value,carry)
+            }
+
+            _ => {
+                let addr = self.get_operand_address(mode);
+                let value = self.mem_read(addr);
+                let (value, carry) = value.overflowing_mul(2);
+                self.mem_write(addr,value);
+                (value,carry)
+            }
+        };
+        
+        self.status = if carry { 
+            self.status | FLAG_CARRY
+        } else {
+            self.status & !FLAG_CARRY
+        };
+        self.update_zero_and_negative_flags(value);
     }
 
     fn update_zero_and_negative_flags(&mut self, result: u8){
@@ -715,5 +756,41 @@ mod test {
         });
         assert_eq!(cpu.register_a, 0x03);
         assert_status(cpu, 0);
+    }
+
+    #[test]
+    fn test_asl_accumulator() {
+        let cpu = run(vec![0x0a,0x00], |cpu| {
+            cpu.register_a = 0x03;
+        });
+        assert_eq!(cpu.register_a, 0x06);
+        assert_status(cpu, 0);
+    }
+
+    #[test]
+    fn test_asl_accumulator_occur_overflow() {
+        let cpu = run(vec![0x0a,0x00], |cpu| {
+            cpu.register_a = 0x81;
+        });
+        assert_eq!(cpu.register_a, 0x02);
+        assert_status(cpu, FLAG_CARRY);
+    }
+
+    #[test]
+    fn test_asl_zero_page() {
+        let cpu = run(vec![0x06,0x01,0x00], |cpu| {
+            cpu.mem_write(0x0001, 0x03);
+        });
+        assert_eq!(cpu.mem_read(0x0001), 0x06);
+        assert_status(cpu, 0);
+    }
+
+    #[test]
+    fn test_asl_zero_page_occur_overflow() {
+        let cpu = run(vec![0x06,0x01,0x00], |cpu| {
+            cpu.mem_write(0x0001, 0x81);
+        });
+        assert_eq!(cpu.mem_read(0x0001), 0x02);
+        assert_status(cpu, FLAG_CARRY);
     }
 }
