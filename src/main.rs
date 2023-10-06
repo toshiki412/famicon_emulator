@@ -16,6 +16,7 @@ pub enum AddressingMode {
     Absolute_Y, //yレジスタバージョン　　                              LDA $4400,Y => B9 00 44
     Indirect_X,
     Indirect_Y,
+    Relative,
     NoneAddressing,
 }
 
@@ -95,6 +96,11 @@ impl CPU {
                 let deref_base = (hi as u16) << 8 | (lo as u16);
                 let deref = deref_base.wrapping_add(self.register_y as u16);
                 deref
+            }
+            AddressingMode::Relative => {
+                let base = self.mem_read(self.program_counter);
+                let np = (base as i8) as i32 + self.program_counter as i32;
+                np as u16
             }
             AddressingMode::NoneAddressing => {
                 panic!("mode {:?} is not supported", mode);
@@ -307,6 +313,18 @@ impl CPU {
                     self.ror(&AddressingMode::Accumulator);
                 }
 
+                // BCC
+                0x90 => {
+                    self.bcc(&AddressingMode::Relative);
+                    self.program_counter += 1;
+                }
+
+                // BCS
+                0xB0 => {
+                    self.bcs(&AddressingMode::Relative);
+                    self.program_counter += 1;
+                }
+
                  _ => todo!("")
             }
         }
@@ -473,7 +491,8 @@ impl CPU {
             let addr = self.get_operand_address(mode);
             let value = self.mem_read(addr);
             let carry = value & 0x01;
-            self.mem_write(addr,value/2);
+            let value = value / 2;
+            self.mem_write(addr,value);
             (value,carry)
         };
 
@@ -533,6 +552,24 @@ impl CPU {
             self.status & !FLAG_CARRY
         };
         self.update_zero_and_negative_flags(value);
+    }
+
+    // BCC 
+    fn bcc(&mut self, mode: &AddressingMode){
+        let addr = self.get_operand_address(mode);
+        if self.status & FLAG_CARRY == 0 {
+            self.program_counter = addr
+        }
+        //carryが立っている場合、分岐はしない
+    }
+
+    // BCS 
+    fn bcs(&mut self, mode: &AddressingMode){
+        let addr = self.get_operand_address(mode);
+        if self.status & FLAG_CARRY != 0 {
+            self.program_counter = addr
+        }
+        //carryが立っていない場合、分岐はしない
     }
 
     fn update_zero_and_negative_flags(&mut self, result: u8){
@@ -927,6 +964,15 @@ mod test {
     }
 
     #[test]
+    fn test_lsr_zero_page_zero_flag() {
+        let cpu = run(vec![0x46,0x01,0x00], |cpu| {
+            cpu.mem_write(0x0001, 0x01);
+        });
+        assert_eq!(cpu.mem_read(0x0001), 0x00);
+        assert_status(&cpu, FLAG_ZERO | FLAG_CARRY);
+    }
+
+    #[test]
     fn test_lsr_zero_page_occur_carry() {
         let cpu = run(vec![0x46,0x01,0x00], |cpu| {
             cpu.mem_write(0x0001, 0x3);
@@ -1069,6 +1115,57 @@ mod test {
         });
         assert_eq!(cpu.mem_read(0x0001), 0x80);
         assert_status(&cpu, FLAG_NEGATIVE);
+    }
+
+    // BCC 
+    #[test]
+    fn test_bcc() {
+        let cpu = run(vec![0x90,0x02,0x00,0x00,0xe8,0x00], |_| {});
+        assert_eq!(cpu.register_x, 0x01); //0x90 0x02より2命令進んで0xe8に到達
+        assert_eq!(cpu.program_counter, 0x8006); //PCは8000から始まって6命令進んでる
+        assert_status(&cpu,0);
+    }
+
+    #[test]
+    fn test_bcc_with_carry() {
+        let cpu = run(vec![0x90,0x02,0x00,0x00,0xe8,0x00], |cpu| {
+            cpu.status = FLAG_CARRY; //carryが立っている場合、分岐はしない
+        });
+        assert_eq!(cpu.register_x, 0x00);
+        assert_eq!(cpu.program_counter, 0x8003);
+        assert_status(&cpu,FLAG_CARRY);
+    }
+
+    #[test]
+    fn test_bcc_negative() {
+        let cpu = run(vec![0x90,0xfc,0x00], |cpu| { //0xfc = -4
+            cpu.mem_write(0x7FFF, 0x00);
+            cpu.mem_write(0x7FFE, 0xe8);
+            //この段階で 0xe8 0x00 0x90 0xfc 0x00という命令列になっている
+            //90読んでfcから4つ前に戻るのでe8に到達
+        }); 
+        assert_eq!(cpu.register_x, 0x01);
+        assert_eq!(cpu.program_counter, 0x8000);
+        assert_status(&cpu,0);
+    }
+
+    // BCS 
+    #[test]
+    fn test_bcs() {
+        let cpu = run(vec![0xb0,0x02,0x00,0x00,0xe8,0x00], |_| {});
+        assert_eq!(cpu.register_x, 0x00);
+        assert_eq!(cpu.program_counter, 0x8003);
+        assert_status(&cpu,0);
+    }
+
+    #[test]
+    fn test_bcs_with_carry() {
+        let cpu = run(vec![0xb0,0x02,0x00,0x00,0xe8,0x00], |cpu| {
+            cpu.status = FLAG_CARRY;
+        });
+        assert_eq!(cpu.register_x, 0x01);
+        assert_eq!(cpu.program_counter, 0x8006);
+        assert_status(&cpu,FLAG_CARRY);
     }
     
 }
