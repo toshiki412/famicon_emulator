@@ -337,6 +337,24 @@ impl CPU {
                     self.program_counter += 1;
                 }
 
+                // BIT
+                0x24 => {
+                    self.bit(&AddressingMode::ZeroPage);
+                    self.program_counter += 1;
+                }
+
+                // BMI
+                0x30 => {
+                    self.bmi(&AddressingMode::Relative);
+                    self.program_counter += 1;
+                }
+
+                // BPL
+                0x10 => {
+                    self.bpl(&AddressingMode::Relative);
+                    self.program_counter += 1;
+                }
+
                  _ => todo!("")
             }
         }
@@ -567,6 +585,7 @@ impl CPU {
     }
 
     // BCC 
+    // carry flagが立っていないとき、分岐する
     fn bcc(&mut self, mode: &AddressingMode){
         let addr = self.get_operand_address(mode);
         if self.status & FLAG_CARRY == 0 { //carryが立ってないとき
@@ -576,6 +595,7 @@ impl CPU {
     }
 
     // BCS 
+    // carry flagが立っているとき、分岐する
     fn bcs(&mut self, mode: &AddressingMode){
         let addr = self.get_operand_address(mode);
         if self.status & FLAG_CARRY != 0 { //carryが立っているとき
@@ -585,6 +605,7 @@ impl CPU {
     }
 
     // BEQ 
+    // zero flagが立っているとき、分岐する
     fn beq(&mut self, mode: &AddressingMode){
         let addr = self.get_operand_address(mode);
         if self.status & FLAG_ZERO != 0 { //zeroが立っているとき
@@ -594,12 +615,49 @@ impl CPU {
     }
 
     // BNE 
+    // zero flagが立っていないとき、分岐する
     fn bne(&mut self, mode: &AddressingMode){
         let addr = self.get_operand_address(mode);
         if self.status & FLAG_ZERO == 0 { //zeroが立っていないとき
             self.program_counter = addr
         }
         //zero flagが立っている場合、分岐しない
+    }
+
+    // BIT
+    // A&M, N=M7, V=M6
+    fn bit(&mut self, mode: &AddressingMode){
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        let zero = self.register_a & value;
+        if zero == 0 {
+            self.status = self.status | FLAG_ZERO;
+        } else {
+            self.status = self.status & !FLAG_ZERO;
+        }
+        let flags = FLAG_NEGATIVE | FLAG_OVERFLOW;
+        self.status = (self.status & !flags) | (value & flags);
+    }
+
+    // BMI
+    // negative flagが立っているとき、分岐する
+    fn bmi(&mut self, mode: &AddressingMode){
+        let addr = self.get_operand_address(mode);
+        if self.status & FLAG_NEGATIVE != 0 { //negativeが立っているとき
+            self.program_counter = addr
+        }
+        //negative flagが立っていない場合、分岐しない
+    }
+
+    // BPL
+    // negative flagが立っていないとき、分岐する
+    fn bpl(&mut self, mode: &AddressingMode){
+        let addr = self.get_operand_address(mode);
+        if self.status & FLAG_NEGATIVE == 0 { //negativeが立っていないとき
+            self.program_counter = addr
+        }
+        //negative flagが立っている場合、分岐しない
     }
 
     fn update_zero_and_negative_flags(&mut self, result: u8){
@@ -1234,6 +1292,72 @@ mod test {
         assert_eq!(cpu.register_x, 0x00);
         assert_eq!(cpu.program_counter, 0x8003);
         assert_status(&cpu,FLAG_ZERO);
+    }
+
+    // BIT
+    #[test]
+    fn test_bit() {
+        let cpu = run(vec![0x24,0x00,0x00], |cpu| {
+            cpu.register_a = 0x00;
+            cpu.mem_write(0x0000, 0x00);
+        });
+        assert_status(&cpu, FLAG_ZERO);
+    }
+
+    #[test]
+    fn test_bit_negative_flag() {
+        let cpu = run(vec![0x24,0x00,0x00], |cpu| {
+            cpu.register_a = 0x00;
+            cpu.mem_write(0x0000, 0x80);
+        });
+        assert_status(&cpu, FLAG_NEGATIVE | FLAG_ZERO);
+    }
+
+    #[test]
+    fn test_bit_overflow_flag() {
+        let cpu = run(vec![0x24,0x00,0x00], |cpu| {
+            cpu.register_a = 0x40;
+            cpu.mem_write(0x0000, 0x40);
+        });
+        assert_status(&cpu, FLAG_OVERFLOW);
+    }
+
+    // BMI
+    #[test]
+    fn test_bmi() {
+        let cpu = run(vec![0x30,0x02,0x00,0x00,0xe8,0x00], |_| {});
+        assert_eq!(cpu.register_x, 0x00);
+        assert_status(&cpu, 0);
+        assert_eq!(cpu.program_counter, 0x8003);
+    }
+
+    #[test]
+    fn test_bmi_with_negative_flag() {
+        let cpu = run(vec![0x30,0x02,0x00,0x00,0xe8,0x00], |cpu| {
+            cpu.status = FLAG_NEGATIVE;
+        });
+        assert_eq!(cpu.program_counter, 0x8006);
+        assert_eq!(cpu.register_x, 0x01); 
+        assert_status(&cpu, 0); // INXよりnegativeが落ちる
+    }
+
+    // BPL
+    #[test]
+    fn test_bpl() {
+        let cpu = run(vec![0x10,0x02,0x00,0x00,0xe8,0x00], |_| {});
+        assert_eq!(cpu.program_counter, 0x8006);
+        assert_eq!(cpu.register_x, 0x01); 
+        assert_status(&cpu, 0); // INXよりnegativeが落ちる
+    }
+
+    #[test]
+    fn test_bpl_with_negative_flag() {
+        let cpu = run(vec![0x10,0x02,0x00,0x00,0xe8,0x00], |cpu| {
+            cpu.status = FLAG_NEGATIVE;
+        });
+        assert_eq!(cpu.register_x, 0x00);
+        assert_status(&cpu, FLAG_NEGATIVE);
+        assert_eq!(cpu.program_counter, 0x8003);
     }
     
 }
