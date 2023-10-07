@@ -17,6 +17,7 @@ pub enum AddressingMode {
     Indirect_X,
     Indirect_Y,
     Relative,
+    Implied,
     NoneAddressing,
 }
 
@@ -101,6 +102,9 @@ impl CPU {
                 let base = self.mem_read(self.program_counter);
                 let np = (base as i8) as i32 + self.program_counter as i32;
                 np as u16
+            }
+            AddressingMode::Implied => {
+                panic!("AddressingMode Implied");
             }
             AddressingMode::NoneAddressing => {
                 panic!("mode {:?} is not supported", mode);
@@ -199,7 +203,8 @@ impl CPU {
 
                 // BRK
                 0x00 => {
-                    return;
+                    // self.brk(&AddressingMode::Implied);
+                    break;
                 }
 
                 // TAX
@@ -353,6 +358,52 @@ impl CPU {
                 0x10 => {
                     self.bpl(&AddressingMode::Relative);
                     self.program_counter += 1;
+                }
+
+                // BVC
+                0x50 => {
+                    self.bvc(&AddressingMode::Relative);
+                    self.program_counter += 1;
+                }
+                // BVS
+                0x70 => {
+                    self.bvs(&AddressingMode::Relative);
+                    self.program_counter += 1;
+                }
+
+                // CLC
+                0x18 => {
+                    self.clc(&AddressingMode::Implied);
+                }
+
+                // SEC
+                0x38 => {
+                    self.sec(&AddressingMode::Implied);
+                }
+
+                // CLD
+                0xd8 => {
+                    self.cld(&AddressingMode::Implied);
+                }
+
+                // SED
+                0xf8 => {
+                    self.sed(&AddressingMode::Implied);
+                }
+
+                // CLI
+                0x58 => {
+                    self.cli(&AddressingMode::Implied);
+                }
+
+                // SEI
+                0x78 => {
+                    self.sei(&AddressingMode::Implied);
+                }
+
+                // CLV
+                0xB8 => {
+                    self.clv(&AddressingMode::Implied);
                 }
 
                  _ => todo!("")
@@ -587,41 +638,25 @@ impl CPU {
     // BCC 
     // carry flagが立っていないとき、分岐する
     fn bcc(&mut self, mode: &AddressingMode){
-        let addr = self.get_operand_address(mode);
-        if self.status & FLAG_CARRY == 0 { //carryが立ってないとき
-            self.program_counter = addr
-        }
-        //carryが立っている場合、分岐はしない
+        self._branch(mode, FLAG_CARRY, false);
     }
 
     // BCS 
     // carry flagが立っているとき、分岐する
     fn bcs(&mut self, mode: &AddressingMode){
-        let addr = self.get_operand_address(mode);
-        if self.status & FLAG_CARRY != 0 { //carryが立っているとき
-            self.program_counter = addr
-        }
-        //carryが立っていない場合、分岐はしない
+        self._branch(mode, FLAG_CARRY, true);
     }
 
     // BEQ 
     // zero flagが立っているとき、分岐する
     fn beq(&mut self, mode: &AddressingMode){
-        let addr = self.get_operand_address(mode);
-        if self.status & FLAG_ZERO != 0 { //zeroが立っているとき
-            self.program_counter = addr
-        }
-        //zero flagが立っていない場合、分岐しない
+        self._branch(mode, FLAG_ZERO, true);
     }
 
     // BNE 
     // zero flagが立っていないとき、分岐する
     fn bne(&mut self, mode: &AddressingMode){
-        let addr = self.get_operand_address(mode);
-        if self.status & FLAG_ZERO == 0 { //zeroが立っていないとき
-            self.program_counter = addr
-        }
-        //zero flagが立っている場合、分岐しない
+        self._branch(mode, FLAG_ZERO, false);
     }
 
     // BIT
@@ -643,21 +678,80 @@ impl CPU {
     // BMI
     // negative flagが立っているとき、分岐する
     fn bmi(&mut self, mode: &AddressingMode){
-        let addr = self.get_operand_address(mode);
-        if self.status & FLAG_NEGATIVE != 0 { //negativeが立っているとき
-            self.program_counter = addr
-        }
-        //negative flagが立っていない場合、分岐しない
+        self._branch(mode, FLAG_NEGATIVE, true);
     }
 
     // BPL
     // negative flagが立っていないとき、分岐する
     fn bpl(&mut self, mode: &AddressingMode){
+        self._branch(mode, FLAG_NEGATIVE, false);
+    }
+
+    // BVS
+    // overflow flagが立っているとき、分岐する
+    fn bvs(&mut self, mode: &AddressingMode){
+        self._branch(mode, FLAG_OVERFLOW, true);
+    }
+
+    // BVC
+    // overflow flagが立っていないとき、分岐する
+    fn bvc(&mut self, mode: &AddressingMode){
+        self._branch(mode, FLAG_OVERFLOW, false);
+    }
+
+    // branch
+    fn _branch(&mut self, mode: &AddressingMode, flag: u8, is_flag: bool){
         let addr = self.get_operand_address(mode);
-        if self.status & FLAG_NEGATIVE == 0 { //negativeが立っていないとき
-            self.program_counter = addr
+        if is_flag {
+            if self.status & flag != 0 { //flagが立っているとき
+                self.program_counter = addr
+            }
+        } else {
+            if self.status & flag == 0 { //flagが立っていないとき
+                self.program_counter = addr
+            }
         }
-        //negative flagが立っている場合、分岐しない
+    }
+
+    // BRK
+    fn brk(&mut self, _mode: &AddressingMode){
+        self.program_counter = self.mem_read_u16(0xFFFE);
+        self.status = self.status | FLAG_BREAK;
+    }
+
+    // CLC
+    fn clc(&mut self, _mode: &AddressingMode){
+        self.status = self.status & !FLAG_CARRY;
+    }
+
+    // SEC
+    fn sec(&mut self, _mode: &AddressingMode){
+        self.status = self.status | FLAG_CARRY;
+    }
+
+    // CLD
+    fn cld(&mut self, _mode: &AddressingMode){
+        self.status = self.status & !FLAG_DECIMAL;
+    }
+
+    // SED
+    fn sed(&mut self, _mode: &AddressingMode){
+        self.status = self.status | FLAG_DECIMAL;
+    }
+
+    // CLI
+    fn cli(&mut self, _mode: &AddressingMode){
+        self.status = self.status & !FLAG_INTERRUCT;
+    }
+
+    // SEI
+    fn sei(&mut self, _mode: &AddressingMode){
+        self.status = self.status | FLAG_INTERRUCT;
+    }
+
+    // CLV
+    fn clv(&mut self, _mode: &AddressingMode){
+        self.status = self.status & !FLAG_OVERFLOW;
     }
 
     fn update_zero_and_negative_flags(&mut self, result: u8){
@@ -1358,6 +1452,107 @@ mod test {
         assert_eq!(cpu.register_x, 0x00);
         assert_status(&cpu, FLAG_NEGATIVE);
         assert_eq!(cpu.program_counter, 0x8003);
+    }
+
+    // BVC
+    #[test]
+    fn test_bvc() {
+        let cpu = run(vec![0x50,0x02,0x00,0x00,0xe8,0x00], |_| {});
+        assert_eq!(cpu.program_counter, 0x8006);
+        assert_eq!(cpu.register_x, 0x01); 
+        assert_status(&cpu, 0); // INXよりnegativeが落ちる
+    }
+
+    #[test]
+    fn test_bvc_with_overflow_flag() {
+        let cpu = run(vec![0x50,0x02,0x00,0x00,0xe8,0x00], |cpu| {
+            cpu.status = FLAG_OVERFLOW;
+        });
+        assert_eq!(cpu.register_x, 0x00);
+        assert_status(&cpu, FLAG_OVERFLOW);
+        assert_eq!(cpu.program_counter, 0x8003);
+    }
+
+    // BVS
+    #[test]
+    fn test_bvs() {
+        let cpu = run(vec![0x70,0x02,0x00,0x00,0xe8,0x00], |_| {});
+        assert_eq!(cpu.program_counter, 0x8003);
+        assert_eq!(cpu.register_x, 0x00); 
+        assert_status(&cpu, 0); 
+    }
+
+    #[test]
+    fn test_bvs_with_overflow_flag() {
+        let cpu = run(vec![0x70,0x02,0x00,0x00,0xe8,0x00], |cpu| {
+            cpu.status = FLAG_OVERFLOW;
+        });
+        assert_eq!(cpu.register_x, 0x01);
+        assert_status(&cpu, FLAG_OVERFLOW);
+        assert_eq!(cpu.program_counter, 0x8006);
+    }
+
+    // CLC
+    #[test]
+    fn test_clc(){
+        let cpu = run(vec![0x18,0x00], |cpu| {
+            cpu.status = FLAG_CARRY | FLAG_NEGATIVE;
+        });
+        assert_status(&cpu, FLAG_NEGATIVE);
+    }
+
+    // SEC
+    #[test]
+    fn test_sec(){
+        let cpu = run(vec![0x38,0x00], |cpu| {
+            cpu.status = FLAG_NEGATIVE;
+        });
+        assert_status(&cpu, FLAG_CARRY | FLAG_NEGATIVE);
+    }
+
+    // CLD
+    #[test]
+    fn test_cld(){
+        let cpu = run(vec![0xd8,0x00], |cpu| {
+            cpu.status = FLAG_DECIMAL | FLAG_NEGATIVE;
+        });
+        assert_status(&cpu, FLAG_NEGATIVE);
+    }
+
+    // SED
+    #[test]
+    fn test_sed(){
+        let cpu = run(vec![0xf8,0x00], |cpu| {
+            cpu.status = FLAG_NEGATIVE;
+        });
+        assert_status(&cpu, FLAG_DECIMAL | FLAG_NEGATIVE);
+    }
+
+    // CLI
+    #[test]
+    fn test_cli(){
+        let cpu = run(vec![0x58,0x00], |cpu| {
+            cpu.status = FLAG_INTERRUCT | FLAG_NEGATIVE;
+        });
+        assert_status(&cpu, FLAG_NEGATIVE);
+    }
+
+    // SEI
+    #[test]
+    fn test_sei(){
+        let cpu = run(vec![0x78,0x00], |cpu| {
+            cpu.status = FLAG_NEGATIVE;
+        });
+        assert_status(&cpu, FLAG_INTERRUCT | FLAG_NEGATIVE);
+    }
+
+    // CLV
+    #[test]
+    fn test_clv(){
+        let cpu = run(vec![0xb8,0x00], |cpu| {
+            cpu.status = FLAG_OVERFLOW | FLAG_NEGATIVE;
+        });
+        assert_status(&cpu, FLAG_NEGATIVE);
     }
     
 }
