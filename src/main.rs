@@ -406,6 +406,24 @@ impl CPU {
                     self.clv(&AddressingMode::Implied);
                 }
 
+                // CMP
+                0xC9 => {
+                    self.cmp(&AddressingMode::Immidiate);
+                    self.program_counter += 1;
+                }
+
+                // CPX
+                0xE0 => {
+                    self.cpx(&AddressingMode::Immidiate);
+                    self.program_counter += 1;
+                }
+
+                // CPY
+                0xC0 => {
+                    self.cpy(&AddressingMode::Immidiate);
+                    self.program_counter += 1;
+                }
+
                  _ => todo!("")
             }
         }
@@ -752,6 +770,39 @@ impl CPU {
     // CLV
     fn clv(&mut self, _mode: &AddressingMode){
         self.status = self.status & !FLAG_OVERFLOW;
+    }
+
+    // CMP
+    // if A>=M carry flag set.  if A=M zero flag set.
+    fn cmp(&mut self, mode: &AddressingMode){
+        self._compare(self.register_a, mode);
+    }
+
+    // CPX
+    // if X>=M carry flag set.  if X=M zero flag set.
+    fn cpx(&mut self, mode: &AddressingMode){
+        self._compare(self.register_x, mode);
+    }
+
+    // CPY
+    // if Y>=M carry flag set.  if Y=M zero flag set.
+    fn cpy(&mut self, mode: &AddressingMode){
+        self._compare(self.register_y, mode);
+    }
+
+    // compare
+    fn _compare(&mut self, target: u8, mode: &AddressingMode){
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+
+        if target >= value {
+            self.sec(&AddressingMode::Implied);
+        } else {
+            self.clc(&AddressingMode::Implied);
+        }
+
+        let (value, _ ) = target.overflowing_sub(value);
+        self.update_zero_and_negative_flags(value);
     }
 
     fn update_zero_and_negative_flags(&mut self, result: u8){
@@ -1553,6 +1604,49 @@ mod test {
             cpu.status = FLAG_OVERFLOW | FLAG_NEGATIVE;
         });
         assert_status(&cpu, FLAG_NEGATIVE);
+    }
+
+    // CMP
+    #[test]
+    fn test_cmp(){
+        let cpu = run(vec![0xc9,0x01], |cpu| {
+            cpu.register_a = 0x02;
+        });
+        assert_status(&cpu, FLAG_CARRY); //2>=1よりキャリーが立つ
+    }
+
+    #[test]
+    fn test_cmp_eq(){
+        let cpu = run(vec![0xc9,0x02], |cpu| {
+            cpu.register_a = 0x02;
+        });
+        assert_status(&cpu, FLAG_CARRY | FLAG_ZERO); //2=2よりキャリーとゼロが立つ
+    }
+
+    #[test]
+    fn test_cmp_no_flag(){
+        let cpu = run(vec![0xc9,0x03], |cpu| {
+            cpu.register_a = 0x02;
+        });
+        assert_status(&cpu, FLAG_NEGATIVE); //2<3 よりnegativeが立つ (2-3より)
+    }
+
+    // CPX
+    #[test]
+    fn test_cpx(){
+        let cpu = run(vec![0xe0,0x01], |cpu| {
+            cpu.register_x = 0x02;
+        });
+        assert_status(&cpu, FLAG_CARRY);
+    }
+
+    // CPY
+    #[test]
+    fn test_cpy(){
+        let cpu = run(vec![0xc0,0x01], |cpu| {
+            cpu.register_y = 0x02;
+        });
+        assert_status(&cpu, FLAG_CARRY);
     }
     
 }
