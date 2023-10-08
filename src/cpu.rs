@@ -247,22 +247,45 @@ impl CPU {
     pub fn rti(&mut self, mode: &AddressingMode) {}
     pub fn plp(&mut self, mode: &AddressingMode) {}
     pub fn php(&mut self, mode: &AddressingMode) {}
-    pub fn pla(&mut self, mode: &AddressingMode) {}
-    pub fn pha(&mut self, mode: &AddressingMode) {}
-    pub fn nop(&mut self, mode: &AddressingMode) {}
-    pub fn ldy(&mut self, mode: &AddressingMode) {}
-    pub fn ldx(&mut self, mode: &AddressingMode) {}
+    pub fn pla(&mut self, mode: &AddressingMode) {
+        self.register_a = self._pop();
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+
+    pub fn pha(&mut self, mode: &AddressingMode) {
+        self._push(self.register_a);
+    }
+
+    pub fn nop(&mut self, mode: &AddressingMode) {
+        //何もしない
+    }
+
+    pub fn ldy(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        self.register_y = value;
+        self.update_zero_and_negative_flags(self.register_y);
+    }
+
+    pub fn ldx(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        self.register_x = value;
+        self.update_zero_and_negative_flags(self.register_x);
+    }
+
     pub fn lda(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
         self.register_a = value;
         self.update_zero_and_negative_flags(self.register_a);
     }
-    
+
     pub fn rts(&mut self, mode: &AddressingMode) {
         let value = self._pop_u16();
         self.program_counter = value;
     }
+
     pub fn jsr(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         self._push_u16(self.program_counter + 2); //PC+2が次の命令の頭になる. 
@@ -1679,5 +1702,75 @@ mod test {
         assert_eq!(cpu.stack_pointer, 0xff);
         //書きつぶされていないか
         assert_eq!(cpu.mem_read_u16(0x01fe),0x8003);
+    }
+
+    // LDX
+    #[test]
+    fn test_ldx() {
+        let cpu = run(vec![0xa2, 0x05, 0x00], |_| {});
+        assert_eq!(cpu.register_x, 0x05);
+        assert_status(&cpu, 0);
+    }
+
+    // LDY
+    #[test]
+    fn test_ldy() {
+        let cpu = run(vec![0xa0, 0x05, 0x00], |_| {});
+        assert_eq!(cpu.register_y, 0x05);
+        assert_status(&cpu, 0);
+    }
+
+    // NOP
+    #[test]
+    fn test_nop() {
+        let cpu = run(vec![0xea,0x00], |_| {});
+        assert_eq!(cpu.program_counter, 0x8002);
+        assert_status(&cpu, 0);
+    }
+
+    // PHA
+    #[test]
+    fn test_pha() {
+        let cpu = run(vec![0x48,0x00], |cpu| {
+            cpu.register_a = 0x07;
+        });
+        assert_eq!(cpu.register_a, 0x07);
+        assert_eq!(cpu.stack_pointer, 0xfe);
+        assert_eq!(cpu.mem_read_u16(0x01ff), 0x07);
+        assert_status(&cpu, 0);
+    }
+
+    // PLA
+    #[test]
+    fn test_pla() {
+        let cpu = run(vec![0x68,0x00], |cpu| {
+            cpu.mem_write(0x01FF,0x07);
+            cpu.stack_pointer = 0xfe;
+        });
+        assert_eq!(cpu.register_a, 0x07);
+        assert_eq!(cpu.stack_pointer, 0xff);
+        assert_status(&cpu, 0);
+    }
+
+    #[test]
+    fn test_pla_zero() {
+        let cpu = run(vec![0x68,0x00], |cpu| {
+            cpu.mem_write(0x01FF,0x00);
+            cpu.stack_pointer = 0xfe;
+        });
+        assert_eq!(cpu.register_a, 0x00);
+        assert_eq!(cpu.stack_pointer, 0xff);
+        assert_status(&cpu, FLAG_ZERO);
+    }
+
+    #[test]
+    fn test_pha_and_pla() {
+        let cpu = run(vec![0x48,0xa9,0x60,0x68,0x00], |cpu| {
+            cpu.register_a = 0x80;
+        });
+        assert_eq!(cpu.register_a, 0x80);
+        assert_eq!(cpu.stack_pointer, 0xff);
+        assert_eq!(cpu.program_counter, 0x8005);
+        assert_status(&cpu, FLAG_NEGATIVE);
     }
 }
