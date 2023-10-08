@@ -61,6 +61,7 @@ pub struct CPU {
     pub register_y: u8,
     pub status: u8,
     pub program_counter: u16,
+    pub stack_pointer: u8,
     pub memory: [u8; 0x10000], // 0xFFFF
 }
 
@@ -72,6 +73,7 @@ impl CPU {
             register_y: 0,
             status: 0,
             program_counter: 0,
+            stack_pointer: 0xFF,
             memory: [0x00; 0x10000],
         }
     }
@@ -202,6 +204,7 @@ impl CPU {
         self.register_x = 0;
         self.register_y = 0;
         self.status = 0;
+        self.stack_pointer = 0xff;
         // TODO memoryリセット必要？？
 
         self.program_counter = self.mem_read_u16(0xFFFC);
@@ -249,9 +252,57 @@ impl CPU {
     pub fn nop(&mut self, mode: &AddressingMode) {}
     pub fn ldy(&mut self, mode: &AddressingMode) {}
     pub fn ldx(&mut self, mode: &AddressingMode) {}
-    // pub fn lda(&mut self, mode: &AddressingMode) {}
-    pub fn rts(&mut self, mode: &AddressingMode) {}
-    pub fn jsr(&mut self, mode: &AddressingMode) {}
+    pub fn lda(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        self.register_a = value;
+        self.update_zero_and_negative_flags(self.register_a);
+    }
+    
+    pub fn rts(&mut self, mode: &AddressingMode) {
+        let value = self._pop_u16();
+        self.program_counter = value;
+    }
+    pub fn jsr(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        self._push_u16(self.program_counter + 2); //PC+2が次の命令の頭になる. 
+        self.program_counter = addr;
+        //後で+2するので整合性のため-2しておく
+        self.program_counter -= 2;
+    }
+
+
+    // FD  FE FF
+    // 00  00 00
+
+    pub fn _push(&mut self, value: u8) {
+        let addr = 0x0100 + self.stack_pointer as u16; //NESのスタック領域は0x0100~0x01FF
+        self.mem_write(addr, value);
+        //0x01ffに書き込んだのでスタックポインタを0x01feを指すようにする
+        self.stack_pointer  = self.stack_pointer.wrapping_sub(1); 
+    }
+
+    pub fn _pop(&mut self) -> u8 {
+        self.stack_pointer = self.stack_pointer.wrapping_add(1);
+        let addr = 0x0100 + self.stack_pointer as u16;
+        self.mem_read(addr)
+    }
+
+    pub fn _push_u16(&mut self, value: u16) {
+        //mem_write_u16するためにaddrを一回0x01FEまで下げて、そこから2byte分(FE,FF)を書き込ませる
+        let addr = 0x0100 + self.stack_pointer.wrapping_sub(1) as u16;
+        self.mem_write_u16(addr, value);
+        self.stack_pointer  = self.stack_pointer.wrapping_sub(2);
+    }
+
+    pub fn _pop_u16(&mut self) -> u16 {
+        //stack pointerは空を指しているはずなので1つ足したところを指してあげる
+        //例えばFF,FEに値が入っていたらSPはFDを指している。FE,FFを読むためにaddrをFD+1=FEを指すようにする
+        let addr = 0x0100 + self.stack_pointer.wrapping_add(1) as u16;
+        let value = self.mem_read_u16(addr);
+        self.stack_pointer = self.stack_pointer.wrapping_add(2);
+        value
+    }
 
     pub fn jmp(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
@@ -585,13 +636,6 @@ impl CPU {
         };
 
         self.update_zero_and_negative_flags(self.register_a)
-    }
-
-    pub fn lda(&mut self, mode: &AddressingMode) {
-        let addr = self.get_operand_address(mode);
-        let value = self.mem_read(addr);
-        self.register_a = value;
-        self.update_zero_and_negative_flags(self.register_a);
     }
 
     pub fn tax(&mut self, mode: &AddressingMode) {
@@ -1586,5 +1630,54 @@ mod test {
         assert_eq!(cpu.register_x, 0x01);
         assert_status(&cpu, 0);
         assert_eq!(cpu.program_counter, 0x0203);
+    }
+
+    // JSR
+    #[test]
+    fn test_jsr() {
+        let cpu = run(vec![0x20, 0x30, 0x40, 0x00], |cpu| {
+            cpu.mem_write(0x4030, 0xe8);
+            cpu.mem_write(0x4031, 0x00);
+        });
+        assert_eq!(cpu.register_x, 0x01);
+        assert_status(&cpu, 0);
+        assert_eq!(cpu.program_counter, 0x4032);
+        assert_eq!(cpu.stack_pointer, 0xfd);
+        assert_eq!(cpu.mem_read_u16(0x01fe), 0x8003);
+    }
+
+    // RTS
+    #[test]
+    fn test_rts() {
+        let cpu = run(vec![0x60,0x00], |cpu| {
+            cpu.mem_write(0x01FF, 0x05);
+            cpu.mem_write(0x01FE, 0x06);
+
+            cpu.mem_write(0x0506, 0xe8);
+            cpu.mem_write(0x0507, 0x00);
+
+            cpu.stack_pointer = 0xFD;
+        });
+        assert_eq!(cpu.register_x, 0x01);
+        assert_status(&cpu, 0);
+        assert_eq!(cpu.program_counter, 0x0508);
+        assert_eq!(cpu.stack_pointer, 0xff);
+        //書きつぶされていないか
+        assert_eq!(cpu.mem_read_u16(0x01fe),0x0506);
+    }
+
+    #[test]
+    fn test_jsr_and_rts() {
+        let cpu = run(vec![0x20, 0x30, 0x40, 0x00], |cpu| {
+            cpu.mem_write(0x4030, 0xe8);
+            cpu.mem_write(0x4031, 0x60); //RTS
+            cpu.mem_write(0x4032, 0x00);
+        });
+        assert_eq!(cpu.register_x, 0x01);
+        assert_status(&cpu, 0);
+        assert_eq!(cpu.program_counter, 0x8004);
+        assert_eq!(cpu.stack_pointer, 0xff);
+        //書きつぶされていないか
+        assert_eq!(cpu.mem_read_u16(0x01fe),0x8003);
     }
 }

@@ -4,6 +4,7 @@ use crate::cpu::CPU;
 
 lazy_static! {
   pub static ref CPU_OPS_CODES: Vec<OpCode> = vec![
+    //    code, mnemonic, bytes, cycles, addressing_mode
     OpCode::new(0x69, "ADC", 2, 2, AddressingMode::Immediate),
     OpCode::new(0x65, "ADC", 2, 3, AddressingMode::ZeroPage),
     OpCode::new(0x75, "ADC", 2, 4, AddressingMode::ZeroPage_X),
