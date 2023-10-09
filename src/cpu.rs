@@ -66,7 +66,7 @@ pub struct CPU {
 }
 
 impl CPU {
-    fn new() -> Self {
+    pub fn new() -> Self {
         CPU {
             register_a: 0,
             register_x: 0,
@@ -168,24 +168,24 @@ impl CPU {
     }
 
     //指定したアドレス(addr)から1バイト(8bit)のデータを読む関数
-    fn mem_read(&self, addr: u16) -> u8 {
+    pub fn mem_read(&self, addr: u16) -> u8 {
         self.memory[addr as usize]
     }
 
     //指定したアドレス(addr)に1バイトのデータを書き込む
-    fn mem_write(&mut self, addr: u16, data: u8) {
+    pub fn mem_write(&mut self, addr: u16, data: u8) {
         self.memory[addr as usize] = data;
     }
 
     //指定したアドレス(pos)から2バイト(16bit)のデータを読む関数
-    fn mem_read_u16(&self, pos: u16) -> u16 {
+    pub fn mem_read_u16(&self, pos: u16) -> u16 {
         let lo = self.mem_read(pos) as u16;
         let hi = self.mem_read(pos + 1) as u16;
         (hi << 8) | (lo as u16)
     }
 
     //指定したアドレス(pos)に2バイトのデータを書き込む
-    fn mem_write_u16(&mut self, pos: u16, data: u16) {
+    pub fn mem_write_u16(&mut self, pos: u16, data: u16) {
         //16bitのデータ(data)を8bitのハイバイトとローバイトに分ける
         let hi = (data >> 8) as u8;
         let lo = (data & 0x00FF) as u8;
@@ -193,13 +193,13 @@ impl CPU {
         self.mem_write(pos + 1, hi);
     }
 
-    fn load_and_run(&mut self, program: Vec<u8>) {
+    pub fn load_and_run(&mut self, program: Vec<u8>) {
         self.load(program);
         self.reset();
         self.run();
     }
 
-    fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.register_a = 0;
         self.register_x = 0;
         self.register_y = 0;
@@ -210,31 +210,41 @@ impl CPU {
         self.program_counter = self.mem_read_u16(0xFFFC);
     }
 
-    fn load(&mut self, program: Vec<u8>) {
+    pub fn load(&mut self, program: Vec<u8>) {
         //8000番地から上にカートリッジ（ファミコンのカセット、プログラム）のデータを書き込む
         self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
         self.mem_write_u16(0xFFFC, 0x8000);
     }
 
-    fn run(&mut self) {
-        loop {
-            let opscode = self.mem_read(self.program_counter);
-            self.program_counter += 1;
+    pub fn run(&mut self) {
+        self.run_with_callback(|cpu| {});
+    }
 
-            println!("OPS: {:X}", opscode);
-
-            for op in CPU_OPS_CODES.iter() {
-                if op.code == opscode {
-                    // FIXME FOR TEST
-                    if op.mnemonic == "BRK" {
-                        return;
+    pub fn run_with_callback<F>(&mut self, mut callback: F)
+        where 
+            F: FnMut(&mut CPU),
+            {
+                
+                loop {
+                    let opscode = self.mem_read(self.program_counter);
+                    self.program_counter += 1;
+        
+                    println!("OPS: {:X}", opscode);
+        
+                    for op in CPU_OPS_CODES.iter() {
+                        if op.code == opscode {
+                            // FIXME FOR TEST
+                            if op.mnemonic == "BRK" {
+                                return;
+                            }
+                            callback(self);
+                            call(self, &op);
+                            break;
+                        }
                     }
-                    call(self, &op);
-                    break;
                 }
             }
-        }
-    }
+
     pub fn txs(&mut self, mode: &AddressingMode) {
         self.stack_pointer = self.register_x;
     }
