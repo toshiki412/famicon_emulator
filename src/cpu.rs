@@ -234,9 +234,9 @@ impl CPU {
                     for op in CPU_OPS_CODES.iter() {
                         if op.code == opscode {
                             // FIXME FOR TEST
-                            if op.mnemonic == "BRK" {
-                                return;
-                            }
+                            // if op.mnemonic == "BRK" {
+                            //     return;
+                            // }
                             callback(self);
                             call(self, &op);
                             break;
@@ -347,7 +347,8 @@ impl CPU {
         self._push_u16(self.program_counter + 2); //PC+2が次の命令の頭になる. 
         self.program_counter = addr;
         //後で+2するので整合性のため-2しておく
-        self.program_counter -= 2;
+        // self.program_counter -= 2;
+        self.program_counter = self.program_counter.wrapping_sub(2);
     }
 
 
