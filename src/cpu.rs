@@ -1,5 +1,7 @@
 use crate::opscodes::{call, CPU_OPS_CODES};
 
+use crate::bus::Bus;
+
 #[derive(Debug, PartialEq)] //deriveは継承。Debugトレイトを継承。
 #[allow(non_camel_case_types)] //allowはリンカに対してnon_camel_case_typeのエラーを出さないようにする
 pub enum AddressingMode {
@@ -62,7 +64,26 @@ pub struct CPU {
     pub status: u8,
     pub program_counter: u16,
     pub stack_pointer: u8,
-    pub memory: [u8; 0x10000], // 0xFFFF
+    // pub memory: [u8; 0x10000], // 0xFFFF
+    pub bus: Bus,
+}
+
+impl Mem for CPU {
+    fn mem_read(&self, addr: u16) -> u8 {
+        self.bus.mem_read(addr);
+    }
+
+    fn mem_write(&mut self, addr: u16, data: u8) {
+        self.bus.mem_write(addr, data)
+    }
+
+    fn mem_read_u16(&self, addr: u16) -> u16 {
+        self.bus.mem_read_u16(addr);
+    }
+
+    fn mem_write(&mut self, addr: u16, data: u16) {
+        self.bus.mem_write_u16(addr, data)
+    }
 }
 
 impl CPU {
@@ -74,7 +95,8 @@ impl CPU {
             status: 0,
             program_counter: 0,
             stack_pointer: 0xFF,
-            memory: [0x00; 0x10000],
+            // memory: [0x00; 0x10000],
+            bus: Bus::new(),
         }
     }
 
@@ -170,6 +192,7 @@ impl CPU {
     //指定したアドレス(addr)から1バイト(8bit)のデータを読む関数
     pub fn mem_read(&self, addr: u16) -> u8 {
         self.memory[addr as usize]
+        // self.bus.mem_read(addr)
     }
 
     //指定したアドレス(addr)に1バイトのデータを書き込む
