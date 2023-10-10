@@ -4,6 +4,7 @@ extern crate lazy_static;
 //モジュールのインポートはメインに書かなきゃいけない
 mod cpu;
 mod opscodes;
+mod bus;
 
 use self::cpu::CPU;
 
