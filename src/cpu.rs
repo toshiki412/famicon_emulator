@@ -1,6 +1,7 @@
 use crate::opscodes::{call, CPU_OPS_CODES};
 
-use crate::bus::Bus;
+use crate::bus::{Bus,Mem};
+use crate::rom::Rom;
 
 #[derive(Debug, PartialEq)] //deriveは継承。Debugトレイトを継承。
 #[allow(non_camel_case_types)] //allowはリンカに対してnon_camel_case_typeのエラーを出さないようにする
@@ -70,24 +71,16 @@ pub struct CPU {
 
 impl Mem for CPU {
     fn mem_read(&self, addr: u16) -> u8 {
-        self.bus.mem_read(addr);
+        self.bus.mem_read(addr)
     }
 
     fn mem_write(&mut self, addr: u16, data: u8) {
         self.bus.mem_write(addr, data)
     }
-
-    fn mem_read_u16(&self, addr: u16) -> u16 {
-        self.bus.mem_read_u16(addr);
-    }
-
-    fn mem_write(&mut self, addr: u16, data: u16) {
-        self.bus.mem_write_u16(addr, data)
-    }
 }
 
 impl CPU {
-    pub fn new() -> Self {
+    pub fn new(rom: Rom) -> Self {
         CPU {
             register_a: 0,
             register_x: 0,
@@ -96,7 +89,7 @@ impl CPU {
             program_counter: 0,
             stack_pointer: 0xFF,
             // memory: [0x00; 0x10000],
-            bus: Bus::new(),
+            bus: Bus::new(rom),
         }
     }
 
@@ -191,13 +184,14 @@ impl CPU {
 
     //指定したアドレス(addr)から1バイト(8bit)のデータを読む関数
     pub fn mem_read(&self, addr: u16) -> u8 {
-        self.memory[addr as usize]
-        // self.bus.mem_read(addr)
+        // self.memory[addr as usize]
+        self.bus.mem_read(addr)
     }
 
     //指定したアドレス(addr)に1バイトのデータを書き込む
     pub fn mem_write(&mut self, addr: u16, data: u8) {
-        self.memory[addr as usize] = data;
+        // self.memory[addr as usize] = data;
+        self.bus.mem_write(addr,data);
     }
 
     //指定したアドレス(pos)から2バイト(16bit)のデータを読む関数
@@ -217,7 +211,8 @@ impl CPU {
     }
 
     pub fn load_and_run(&mut self, program: Vec<u8>) {
-        self.load(program);
+        // self.load(program);
+        self.load();
         self.reset();
         self.run();
     }
@@ -233,10 +228,11 @@ impl CPU {
         self.program_counter = self.mem_read_u16(0xFFFC);
     }
 
-    pub fn load(&mut self, program: Vec<u8>) {
+    pub fn load(&mut self) {
+    // pub fn load(&mut self, program: Vec<u8>) {
         //8000番地から上にカートリッジ（ファミコンのカセット、プログラム）のデータを書き込む
-        self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
-        self.mem_write_u16(0xFFFC, 0x8000);
+        // self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
+        // self.mem_write_u16(0xFFFC, 0x8000);
     }
 
     pub fn run(&mut self) {
@@ -767,7 +763,8 @@ mod test {
     where
         F: Fn(&mut CPU),
     {
-        let mut cpu = CPU::new();
+        let mut cpu = CPU::new(Rom::empty());
+        // cpu.load(program);
         cpu.load(program);
         cpu.reset();
         f(&mut cpu);
