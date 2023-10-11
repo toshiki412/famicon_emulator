@@ -6,9 +6,11 @@ mod cpu;
 mod opscodes;
 mod bus;
 mod rom;
+mod cartrige;
 
 use self::cpu::CPU;
 use self::rom::Rom;
+use self::bus::{Bus, Mem};
 
 // initialize SDL
 use sdl2::event::Event;
@@ -16,7 +18,7 @@ use sdl2::EventPump;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::pixels::PixelFormatEnum;
-use sdl2::sys::KeyCode;
+// use sdl2::sys::KeyCode;
 use rand::Rng;
 
 use std::fs::File;
@@ -29,11 +31,10 @@ fn main() {
     let mut buffer = vec![0; metadata.len() as usize];
     f.read(&mut buffer).expect("buffer overflow");
     let rom = Rom::new(&buffer).expect("load error");
+    let bus = Bus::new(rom);
 
-    let mut cpu = CPU::new(rom);
-    // cpu.load(game_code);
-    // cpu.memory[0x0600..(0x0600 + game_code.len())].copy_from_slice(&game_code[..]);
-    // cpu.mem_write_u16(0xFFFC, 0x0600);
+    let mut cpu = CPU::new(bus);
+
     cpu.reset();
 
     let sdl_context = sdl2::init().unwrap();
@@ -53,6 +54,7 @@ fn main() {
     let mut rng = rand::thread_rng();
 
     cpu.run_with_callback(move |cpu|{
+        // println!("{}", trace(cpu));
         handle_user_input(cpu, &mut event_pump);
         cpu.mem_write(0xfe, rng.gen_range(1..16));
 

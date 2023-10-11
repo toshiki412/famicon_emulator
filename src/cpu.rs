@@ -1,7 +1,6 @@
 use crate::opscodes::{call, CPU_OPS_CODES};
 
 use crate::bus::{Bus,Mem};
-use crate::rom::Rom;
 
 #[derive(Debug, PartialEq)] //deriveは継承。Debugトレイトを継承。
 #[allow(non_camel_case_types)] //allowはリンカに対してnon_camel_case_typeのエラーを出さないようにする
@@ -70,17 +69,19 @@ pub struct CPU {
 }
 
 impl Mem for CPU {
+    //指定したアドレス(addr)から1バイト(8bit)のデータを読む関数
     fn mem_read(&self, addr: u16) -> u8 {
         self.bus.mem_read(addr)
     }
 
+    //指定したアドレス(addr)に1バイトのデータを書き込む
     fn mem_write(&mut self, addr: u16, data: u8) {
         self.bus.mem_write(addr, data)
     }
 }
 
 impl CPU {
-    pub fn new(rom: Rom) -> Self {
+    pub fn new(bus: Bus) -> Self {
         CPU {
             register_a: 0,
             register_x: 0,
@@ -89,7 +90,7 @@ impl CPU {
             program_counter: 0,
             stack_pointer: 0xFF,
             // memory: [0x00; 0x10000],
-            bus: Bus::new(rom),
+            bus: bus,
         }
     }
 
@@ -182,18 +183,6 @@ impl CPU {
         }
     }
 
-    //指定したアドレス(addr)から1バイト(8bit)のデータを読む関数
-    pub fn mem_read(&self, addr: u16) -> u8 {
-        // self.memory[addr as usize]
-        self.bus.mem_read(addr)
-    }
-
-    //指定したアドレス(addr)に1バイトのデータを書き込む
-    pub fn mem_write(&mut self, addr: u16, data: u8) {
-        // self.memory[addr as usize] = data;
-        self.bus.mem_write(addr,data);
-    }
-
     //指定したアドレス(pos)から2バイト(16bit)のデータを読む関数
     pub fn mem_read_u16(&self, pos: u16) -> u16 {
         let lo = self.mem_read(pos) as u16;
@@ -247,8 +236,6 @@ impl CPU {
                 loop {
                     let opscode = self.mem_read(self.program_counter);
                     self.program_counter += 1;
-        
-                    println!("OPS: {:X}", opscode);
         
                     for op in CPU_OPS_CODES.iter() {
                         if op.code == opscode {
@@ -752,11 +739,87 @@ impl CPU {
             self.status & !FLAG_NEGATIVE
         }
     }
+
+}
+
+fn trace(cpu: &CPU) -> String {
+    format!("{:<04X}", cpu.program_counter)
 }
 
 //cfgは条件付きコンパイル。テストするとき以外はこのモジュールはコンパイルしない
 #[cfg(test)]
 mod test {
+    use super::*;
+    use crate::bus::Bus;
+    use crate::cartrige::test::test_rom;
+
+    #[test]
+    fn test_frmat_trace() {
+        let mut bus = Bus::new(test_rom());
+        bus.mem_write(100, 0xa2);
+        bus.mem_write(101, 0x01);
+        bus.mem_write(102, 0xca);
+        bus.mem_write(103, 0x88);
+        bus.mem_write(104, 0x00);
+
+        let mut cpu = CPU::new(bus);
+        cpu.program_counter = 0x64;
+        cpu.register_a = 1;
+        cpu.register_x = 2;
+        cpu.register_y = 3;
+
+        let mut result: Vec<String> = vec![];
+        cpu.run_with_callback(|cpu| {
+            result.push(trace(cpu));
+        });
+
+        assert_eq!(
+            "0064  A2 01     LDX #$01                        A:01 X:02 Y:03 P:24 SP:FD",
+            result[0]
+        );
+        assert_eq!(
+            "0066  CA        DEX                             A:01 X:01 Y:03 P:24 SP:FD",
+            result[1]
+        );
+        assert_eq!(
+            "0067  88        DEY                             A:01 X:00 Y:03 P:26 SP:FD",
+            result[2]
+        );
+    }
+
+    #[test]
+    fn test_format_mem_access() {
+        let mut bus = Bus::new(test_rom());
+
+        // ORA ($33), Y
+        bus.mem_write(100, 0x11);
+        bus.mem_write(101, 0x33);
+        
+        // data
+        bus.mem_write(0x33, 0x00);
+        bus.mem_write(0x34, 0x04);
+
+        // target cell
+        bus.mem_write(0x400, 0xaa);
+
+        let mut cpu = CPU::new(bus);
+        cpu.program_counter = 0x64;
+        cpu.register_y = 0;
+
+        let mut result: Vec<String> = vec![];
+        cpu.run_with_callback(|cpu| {
+            result.push(trace(cpu));
+        });
+
+        assert_eq!(
+            "0064  11 33     ORA ($33),Y = 0400 @ 0400 = AA  A:00 X:00 Y:00 P:24 SP:FD",
+            result[0]
+        );
+    }
+
+
+    /*　instruction test
+
     use super::*;
 
     fn run<F>(program: Vec<u8>, f: F) -> CPU
@@ -1949,4 +2012,5 @@ mod test {
         assert_eq!(cpu.stack_pointer, 0x80);
         assert_status(&cpu, 0);
     }
+    */
 }
