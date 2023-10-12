@@ -2,7 +2,7 @@ use crate::opscodes::{call, CPU_OPS_CODES};
 
 use crate::bus::{Bus,Mem};
 
-#[derive(Debug, PartialEq)] //deriveは継承。Debugトレイトを継承。
+#[derive(Debug, Clone, PartialEq)] //deriveは継承。Debugトレイトを継承。
 #[allow(non_camel_case_types)] //allowはリンカに対してnon_camel_case_typeのエラーを出さないようにする
 pub enum AddressingMode {
     Accumulator,
@@ -21,6 +21,7 @@ pub enum AddressingMode {
     NoneAddressing,
 }
 
+#[derive(Debug, Clone)]
 pub struct OpCode {
     pub code: u8,
     pub mnemonic: String,
@@ -52,7 +53,7 @@ const FLAG_ZERO: u8 = 1 << 1;
 const FLAG_INTERRRUPT: u8 = 1 << 2;
 const FLAG_DECIMAL: u8 = 1 << 3;
 const FLAG_BREAK: u8 = 1 << 4;
-// 5 は未使用。
+const FLAG_BREAK2: u8 = 1 << 5; // 5 は未使用。
 const FLAG_OVERFLOW: u8 = 1 << 6;
 const FLAG_NEGATIVE: u8 = 1 << 7;
 
@@ -86,9 +87,9 @@ impl CPU {
             register_a: 0,
             register_x: 0,
             register_y: 0,
-            status: 0,
+            status: FLAG_INTERRRUPT | FLAG_BREAK2, //FIXME
             program_counter: 0,
-            stack_pointer: 0xFF,
+            stack_pointer: 0xFD, //FIXME
             // memory: [0x00; 0x10000],
             bus: bus,
         }
@@ -199,7 +200,7 @@ impl CPU {
         self.mem_write(pos + 1, hi);
     }
 
-    pub fn load_and_run(&mut self, program: Vec<u8>) {
+    pub fn load_and_run(&mut self, _program: Vec<u8>) {
         // self.load(program);
         self.load();
         self.reset();
@@ -237,7 +238,7 @@ impl CPU {
                     let opscode = self.mem_read(self.program_counter);
                     self.program_counter += 1;
 
-                    let op = self.findOps(opscode);
+                    let op = self.find_ops(opscode);
                     match op {
                         Some(op) => {
                             // FIXME FOR TEST
@@ -249,51 +250,43 @@ impl CPU {
                         }
                         _ => {}
                     }
-        
-                    // for op in CPU_OPS_CODES.iter() {
-                    //     if op.code == opscode {
-                    //         callback(self);
-                    //         call(self, &op);
-                    //         break;
-                    //     }
-                    // }
                 }
             }
 
-    fn findOps(&mut self, opscode: u8) -> Option<OpCode> {
+    fn find_ops(&mut self, opscode: u8) -> Option<OpCode> {
         for op in CPU_OPS_CODES.iter() {
             if op.code == opscode {
-                return Some(*op)
+                return Some(op.clone());
             }
         }
         return None
     }
 
-    pub fn txs(&mut self, mode: &AddressingMode) {
+    pub fn txs(&mut self, _mode: &AddressingMode) {
         self.stack_pointer = self.register_x;
     }
 
-    pub fn tsx(&mut self, mode: &AddressingMode) {
+    pub fn tsx(&mut self, _mode: &AddressingMode) {
         self.register_x = self.stack_pointer;
         self.update_zero_and_negative_flags(self.register_x);
     }
 
-    pub fn tya(&mut self, mode: &AddressingMode) {
+    pub fn tya(&mut self, _mode: &AddressingMode) {
         self.register_a = self.register_y;
         self.update_zero_and_negative_flags(self.register_a);
     }
 
-    pub fn tay(&mut self, mode: &AddressingMode) {
+    pub fn tay(&mut self, _mode: &AddressingMode) {
         self.register_y = self.register_a;
         self.update_zero_and_negative_flags(self.register_y);
     }
 
-    pub fn txa(&mut self, mode: &AddressingMode) {
+    pub fn txa(&mut self, _mode: &AddressingMode) {
         self.register_a = self.register_x;
         self.update_zero_and_negative_flags(self.register_a);
     }
 
-    pub fn tax(&mut self, mode: &AddressingMode) {
+    pub fn tax(&mut self, _mode: &AddressingMode) {
         self.register_x = self.register_a;
         self.update_zero_and_negative_flags(self.register_x);
     }
@@ -313,30 +306,30 @@ impl CPU {
         self.mem_write(addr, self.register_a);
     }
 
-    pub fn rti(&mut self, mode: &AddressingMode) {
+    pub fn rti(&mut self, _mode: &AddressingMode) {
         // 一旦保留
         self.status = self._pop();
         self.program_counter = self._pop_u16();
     }
 
-    pub fn plp(&mut self, mode: &AddressingMode) {
+    pub fn plp(&mut self, _mode: &AddressingMode) {
         self.status = self._pop();
     }
 
-    pub fn php(&mut self, mode: &AddressingMode) {
+    pub fn php(&mut self, _mode: &AddressingMode) {
         self._push(self.status);
     }
 
-    pub fn pla(&mut self, mode: &AddressingMode) {
+    pub fn pla(&mut self, _mode: &AddressingMode) {
         self.register_a = self._pop();
         self.update_zero_and_negative_flags(self.register_a);
     }
 
-    pub fn pha(&mut self, mode: &AddressingMode) {
+    pub fn pha(&mut self, _mode: &AddressingMode) {
         self._push(self.register_a);
     }
 
-    pub fn nop(&mut self, mode: &AddressingMode) {
+    pub fn nop(&mut self, _mode: &AddressingMode) {
         //何もしない
     }
 
@@ -361,7 +354,7 @@ impl CPU {
         self.update_zero_and_negative_flags(self.register_a);
     }
 
-    pub fn rts(&mut self, mode: &AddressingMode) {
+    pub fn rts(&mut self, _mode: &AddressingMode) {
         let value = self._pop_u16();
         self.program_counter = value;
     }
@@ -417,12 +410,12 @@ impl CPU {
         // オリジナルの 6502 は、間接ベクトルがページ境界にある場合、ターゲット アドレスを正しくフェッチしません (たとえば、$xxFF で、xx は $00 から $FF までの任意の値です)。この場合、予想どおり $xxFF から LSB を取得しますが、$xx00 から MSB を取得します。これは、65SC02 などの最近のチップで修正されているため、互換性のために、間接ベクトルがページの最後にないことを常に確認してください。
     }
 
-    pub fn iny(&mut self, mode: &AddressingMode) {
+    pub fn iny(&mut self, _mode: &AddressingMode) {
         self.register_y = self.register_y.wrapping_add(1);
         self.update_zero_and_negative_flags(self.register_y);
     }
 
-    pub fn inx(&mut self, mode: &AddressingMode) {
+    pub fn inx(&mut self, _mode: &AddressingMode) {
         self.register_x = self.register_x.wrapping_add(1);
         self.update_zero_and_negative_flags(self.register_x);
     }
@@ -434,12 +427,12 @@ impl CPU {
         self.update_zero_and_negative_flags(value);
     }
 
-    pub fn dey(&mut self, mode: &AddressingMode) {
+    pub fn dey(&mut self, _mode: &AddressingMode) {
         self.register_y = self.register_y.wrapping_sub(1);
         self.update_zero_and_negative_flags(self.register_y);
     }
 
-    pub fn dex(&mut self, mode: &AddressingMode) {
+    pub fn dex(&mut self, _mode: &AddressingMode) {
         self.register_x = self.register_x.wrapping_sub(1);
         self.update_zero_and_negative_flags(self.register_x);
     }
@@ -478,31 +471,31 @@ impl CPU {
         self._cmp(self.register_a, mode);
     }
 
-    pub fn clv(&mut self, mode: &AddressingMode) {
+    pub fn clv(&mut self, _mode: &AddressingMode) {
         self.status = self.status & !FLAG_OVERFLOW;
     }
 
-    pub fn sei(&mut self, mode: &AddressingMode) {
+    pub fn sei(&mut self, _mode: &AddressingMode) {
         self.status = self.status | FLAG_INTERRRUPT;
     }
 
-    pub fn cli(&mut self, mode: &AddressingMode) {
+    pub fn cli(&mut self, _mode: &AddressingMode) {
         self.status = self.status & !FLAG_INTERRRUPT;
     }
 
-    pub fn sed(&mut self, mode: &AddressingMode) {
+    pub fn sed(&mut self, _mode: &AddressingMode) {
         self.status = self.status | FLAG_DECIMAL;
     }
 
-    pub fn cld(&mut self, mode: &AddressingMode) {
+    pub fn cld(&mut self, _mode: &AddressingMode) {
         self.status = self.status & !FLAG_DECIMAL;
     }
 
-    pub fn sec(&mut self, mode: &AddressingMode) {
+    pub fn sec(&mut self, _mode: &AddressingMode) {
         self.status = self.status | FLAG_CARRY;
     }
 
-    pub fn clc(&mut self, mode: &AddressingMode) {
+    pub fn clc(&mut self, _mode: &AddressingMode) {
         self.status = self.status & !FLAG_CARRY;
     }
 
@@ -527,7 +520,7 @@ impl CPU {
         }
     }
 
-    pub fn brk(&mut self, mode: &AddressingMode) {
+    pub fn brk(&mut self, _mode: &AddressingMode) {
         // プログラム カウンターとプロセッサ ステータスがスタックにプッシュされ、
         //   ==> ??? FIXME
         // self._push_u16(self.program_counter);
@@ -761,33 +754,137 @@ impl CPU {
 }
 
 fn trace(cpu: &mut CPU) -> String {
-    let pc = format!("{:<04X}", cpu.program_counter);
-    let op = cpu.mem_read(cpu.program_counter);
-    let ops = cpu.findOps(op).unwrap();
+    let program_counter = cpu.program_counter -1;
+    let pc = format!("{:<04X}", program_counter);
+    let op = cpu.mem_read(program_counter);
+    let ops = cpu.find_ops(op).unwrap();
     let mut args: Vec<u8> = vec![];
     for n in 1..ops.bytes {
-        let arg = cpu.mem_read(cpu.program_counter + n);
+        let arg = cpu.mem_read(program_counter + n);
         args.push(arg);
     }
+
+    let bin = binary(op, &args);
     let asm = disasm(&ops, &args);
-    let memacc = memory_access(ops.addressing_mode, &args);
+    let memacc = memory_access(cpu, ops.addressing_mode, &args);
     let status = cpu2str(cpu);
 
     let mut outputs: Vec<String> = vec![];
-    outputs.push(pc);
-    // outputs.push(op, args);
-    outputs.push(asm);
-    outputs.push(memacc);
-    outputs.push(status);
-    outputs.join(" ")
+    outputs.push(pc.clone());
+    outputs.push(bin.clone());
+    outputs.push(asm.clone());
+    outputs.push(memacc.clone());
+    outputs.push(status.clone());
+    // outputs.join(" ")
+    format!("{:<6}{:<10}{:<12}{:<20}{}", pc, bin, asm, memacc, status)
+}
+
+fn binary(op: u8, args: &Vec<u8>) -> String {
+    let mut list: Vec<String> = vec![];
+    list.push(format!("{:<02X}", op));
+    for v in args {
+        list.push(format!("{:<02X}", v));
+    }
+
+    list.join(" ")
 }
 
 fn disasm(ops: &OpCode, args: &Vec<u8>) -> String {
-    return String::from("");
+    return format!("{} {}", ops.mnemonic, address(&ops.addressing_mode, &args));
 }
 
-fn memory_access(mode: AddressingMode, args: &Vec<u8>) -> String {
-    return String::from("");
+fn address(mode: &AddressingMode, args: &Vec<u8>) -> String {
+    match mode {
+        AddressingMode::Implied => {
+            format!("")
+        }
+
+        AddressingMode::Accumulator => {
+            format!("")
+        }
+        // LDA #$44 => a9 44
+        AddressingMode::Immediate => {
+            format!("#${:<02X}", args[0])
+        }
+
+        // LDA $44 => a5 44
+        AddressingMode::ZeroPage => {
+            format!("${:<02X}", args[0])
+        }
+
+        // LDA $4400 => ad 00 44
+        AddressingMode::Absolute => {
+            format!("#${:<02X}{:<02X}", args[1], args[0])
+        }
+
+        // LDA $44,X => b5 44
+        AddressingMode::ZeroPage_X => {
+            format!("${:<02X},X", args[0])
+        }
+
+        // LDX $44,Y => b6 44
+        AddressingMode::ZeroPage_Y => {
+            format!("${:<02X},Y", args[0])
+        }
+
+        // LDA $4400,X => bd 00 44
+        AddressingMode::Absolute_X => {
+            format!("#${:<02X}{:<02X},X", args[1], args[0])
+        }
+
+        // LDA $4400,Y => b9 00 44
+        AddressingMode::Absolute_Y => {
+            format!("#${:<02X}{:<02X},Y", args[1], args[0])
+        }
+        // JMP
+        AddressingMode::Indirect => {
+            format!("#${:<02X}{:<02X}", args[1], args[0])
+        }
+
+        // LDA ($44,X) => a1 44
+        AddressingMode::Indirect_X => {
+            format!("(${:<02X},X)", args[0])
+        }
+
+        // LDA ($44),Y => b1 44
+        AddressingMode::Indirect_Y => {
+            format!("(${:<02X}),Y", args[0])
+        }
+
+        // BCC *+4 => 90 04
+        AddressingMode::Relative => {
+            format!("*+{:X}", args[0])
+        }
+
+        AddressingMode::NoneAddressing => {
+            panic!("mode {:?} is not supported", mode)
+        }
+    }
+}
+
+fn memory_access(cpu: &CPU, mode: AddressingMode, args: &Vec<u8>) -> String {
+    match mode {
+        AddressingMode::Indirect_X => {
+            let base = args[0];
+            let ptr: u8 = (base as u8).wrapping_add(cpu.register_x);
+            let addr = cpu.mem_read_u16(ptr as u16);
+            let value = cpu.mem_read(addr);
+            format!("@ {:<02X} = {:<04X} = {:<02X}", ptr, addr, value)
+        }
+        
+        AddressingMode::Indirect_Y => {
+            let base = args[0];
+            let deref_base = cpu.mem_read_u16(base as u16);
+            let deref = deref_base.wrapping_add(cpu.register_y as u16);
+            let value = cpu.mem_read(deref);
+            format!("= {:<04X} @ {:<04X} = {:<02X}",deref_base, deref, value)
+        }
+
+        _ => {
+            format!("")
+        }
+
+    }
 }
 
 fn cpu2str(cpu: &CPU) -> String {
