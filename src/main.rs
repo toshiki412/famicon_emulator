@@ -9,7 +9,9 @@ mod rom;
 mod cartrige;
 
 use self::cpu::CPU;
-use self::rom::Rom;
+use crate::cartrige::test::test_rom;
+use crate::cpu::trace;
+// use self::rom::Rom;
 use self::bus::{Bus, Mem};
 
 // initialize SDL
@@ -21,16 +23,14 @@ use sdl2::pixels::PixelFormatEnum;
 // use sdl2::sys::KeyCode;
 use rand::Rng;
 
-use std::fs::File;
-use std::io::Read;
-
 fn main() {
     
-    let mut f = File::open("rom/snake.nes").expect("no file found");
-    let metadata = std::fs::metadata("rom/snake.nes").expect("unable to read metadata");
-    let mut buffer = vec![0; metadata.len() as usize];
-    f.read(&mut buffer).expect("buffer overflow");
-    let rom = Rom::new(&buffer).expect("load error");
+    // let mut f = File::open("rom/snake.nes").expect("no file found");
+    // let metadata = std::fs::metadata("rom/snake.nes").expect("unable to read metadata");
+    // let mut buffer = vec![0; metadata.len() as usize];
+    // f.read(&mut buffer).expect("buffer overflow");
+    // let rom = Rom::new(&buffer).expect("load error");
+    let rom = test_rom();
     let bus = Bus::new(rom);
 
     let mut cpu = CPU::new(bus);
@@ -54,7 +54,7 @@ fn main() {
     let mut rng = rand::thread_rng();
 
     cpu.run_with_callback(move |cpu|{
-        // println!("{}", trace(cpu));
+        println!("{}", trace(cpu));
         handle_user_input(cpu, &mut event_pump);
         cpu.mem_write(0xfe, rng.gen_range(1..16));
 

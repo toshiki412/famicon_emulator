@@ -186,6 +186,12 @@ impl CPU {
 
     //指定したアドレス(pos)から2バイト(16bit)のデータを読む関数
     pub fn mem_read_u16(&self, pos: u16) -> u16 {
+        // FIXME ページ境界
+        if pos == 0xFF || pos == 0x02FF{
+            let lo = self.mem_read(pos) as u16;
+            let hi = self.mem_read(pos & 0xFF00) as u16;
+            return (hi << 8) | (lo as u16);
+        }
         let lo = self.mem_read(pos) as u16;
         let hi = self.mem_read(pos + 1) as u16;
         (hi << 8) | (lo as u16)
@@ -211,11 +217,15 @@ impl CPU {
         self.register_a = 0;
         self.register_x = 0;
         self.register_y = 0;
-        self.status = 0;
-        self.stack_pointer = 0xff;
+        // self.status = 0;
+        self.status = FLAG_INTERRRUPT | FLAG_BREAK2;
+        // self.stack_pointer = 0xff;
+        self.stack_pointer = 0xfd;
         // TODO memoryリセット必要？？
 
         self.program_counter = self.mem_read_u16(0xFFFC);
+        // println!("PC: {:X}", self.program_counter);
+        self.program_counter = 0xC000;
     }
 
     pub fn load(&mut self) {
@@ -307,17 +317,16 @@ impl CPU {
     }
 
     pub fn rti(&mut self, _mode: &AddressingMode) {
-        // 一旦保留
-        self.status = self._pop();
+        self.status = self._pop()& !FLAG_BREAK | FLAG_BREAK2;
         self.program_counter = self._pop_u16();
     }
 
     pub fn plp(&mut self, _mode: &AddressingMode) {
-        self.status = self._pop();
+        self.status = self._pop() & !FLAG_BREAK | FLAG_BREAK2;
     }
 
     pub fn php(&mut self, _mode: &AddressingMode) {
-        self._push(self.status);
+        self._push(self.status | FLAG_BREAK | FLAG_BREAK2);
     }
 
     pub fn pla(&mut self, _mode: &AddressingMode) {
@@ -356,12 +365,17 @@ impl CPU {
 
     pub fn rts(&mut self, _mode: &AddressingMode) {
         let value = self._pop_u16();
-        self.program_counter = value;
+
+        // JSRで-1した分を足す
+        self.program_counter = value + 1;
     }
 
     pub fn jsr(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
-        self._push_u16(self.program_counter + 2); //PC+2が次の命令の頭になる. 
+
+        //PC+2が次の命令の頭になる. ただし、リターンポイントのアドレス-1をスタックにプッシュ
+        self._push_u16(self.program_counter + 2 - 1); 
+
         self.program_counter = addr;
         //後で+2するので整合性のため-2しておく
         // self.program_counter -= 2;
@@ -407,7 +421,12 @@ impl CPU {
         // 後で+2するので整合性のため-2しておく
         self.program_counter -= 2;
         // TODO
-        // オリジナルの 6502 は、間接ベクトルがページ境界にある場合、ターゲット アドレスを正しくフェッチしません (たとえば、$xxFF で、xx は $00 から $FF までの任意の値です)。この場合、予想どおり $xxFF から LSB を取得しますが、$xx00 から MSB を取得します。これは、65SC02 などの最近のチップで修正されているため、互換性のために、間接ベクトルがページの最後にないことを常に確認してください。
+        // オリジナルの 6502 は、間接ベクトルがページ境界にある場合、
+        // ターゲット アドレスを正しくフェッチしません 
+        // (たとえば、$xxFF で、xx は $00 から $FF までの任意の値です)。
+        // この場合、予想どおり $xxFF から LSB を取得しますが、$xx00 から MSB を取得します。
+        // これは、65SC02 などの最近のチップで修正されているため、互換性のために、
+        // 間接ベクトルがページの最後にないことを常に確認してください。
     }
 
     pub fn iny(&mut self, _mode: &AddressingMode) {
@@ -675,6 +694,7 @@ impl CPU {
     pub fn and(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
+        // println!("A: {:<04X} & M: {:<04X}", self.register_a, value);
         self.register_a = self.register_a & value;
         self.update_zero_and_negative_flags(self.register_a);
     }
@@ -753,7 +773,7 @@ impl CPU {
 
 }
 
-fn trace(cpu: &mut CPU) -> String {
+pub fn trace(cpu: &mut CPU) -> String {
     let program_counter = cpu.program_counter -1;
     let pc = format!("{:<04X}", program_counter);
     let op = cpu.mem_read(program_counter);
@@ -765,18 +785,11 @@ fn trace(cpu: &mut CPU) -> String {
     }
 
     let bin = binary(op, &args);
-    let asm = disasm(&ops, &args);
-    let memacc = memory_access(cpu, ops.addressing_mode, &args);
+    let asm = disasm(program_counter, &ops, &args);
+    let memacc = memory_access(cpu, &ops, &args);
     let status = cpu2str(cpu);
 
-    let mut outputs: Vec<String> = vec![];
-    outputs.push(pc.clone());
-    outputs.push(bin.clone());
-    outputs.push(asm.clone());
-    outputs.push(memacc.clone());
-    outputs.push(status.clone());
-    // outputs.join(" ")
-    format!("{:<6}{:<10}{:<12}{:<20}{}", pc, bin, asm, memacc, status)
+    format!("{:<6}{:<10}{:<32}{}", pc, bin, vec![asm, memacc].join(" "), status)
 }
 
 fn binary(op: u8, args: &Vec<u8>) -> String {
@@ -789,18 +802,21 @@ fn binary(op: u8, args: &Vec<u8>) -> String {
     list.join(" ")
 }
 
-fn disasm(ops: &OpCode, args: &Vec<u8>) -> String {
-    return format!("{} {}", ops.mnemonic, address(&ops.addressing_mode, &args));
+fn disasm(program_counter: u16, ops: &OpCode, args: &Vec<u8>) -> String {
+    return format!("{} {}", 
+                    ops.mnemonic, 
+                    address(program_counter, &ops, &args)
+                );
 }
 
-fn address(mode: &AddressingMode, args: &Vec<u8>) -> String {
-    match mode {
+fn address(program_counter: u16, ops: &OpCode, args: &Vec<u8>) -> String {
+    match ops.addressing_mode {
         AddressingMode::Implied => {
             format!("")
         }
 
         AddressingMode::Accumulator => {
-            format!("")
+            format!("A")
         }
         // LDA #$44 => a9 44
         AddressingMode::Immediate => {
@@ -814,7 +830,7 @@ fn address(mode: &AddressingMode, args: &Vec<u8>) -> String {
 
         // LDA $4400 => ad 00 44
         AddressingMode::Absolute => {
-            format!("#${:<02X}{:<02X}", args[1], args[0])
+            format!("${:<02X}{:<02X}", args[1], args[0])
         }
 
         // LDA $44,X => b5 44
@@ -829,16 +845,16 @@ fn address(mode: &AddressingMode, args: &Vec<u8>) -> String {
 
         // LDA $4400,X => bd 00 44
         AddressingMode::Absolute_X => {
-            format!("#${:<02X}{:<02X},X", args[1], args[0])
+            format!("${:<02X}{:<02X},X", args[1], args[0])
         }
 
         // LDA $4400,Y => b9 00 44
         AddressingMode::Absolute_Y => {
-            format!("#${:<02X}{:<02X},Y", args[1], args[0])
+            format!("${:<02X}{:<02X},Y", args[1], args[0])
         }
         // JMP
         AddressingMode::Indirect => {
-            format!("#${:<02X}{:<02X}", args[1], args[0])
+            format!("(${:<02X}{:<02X})", args[1], args[0])
         }
 
         // LDA ($44,X) => a1 44
@@ -851,19 +867,44 @@ fn address(mode: &AddressingMode, args: &Vec<u8>) -> String {
             format!("(${:<02X}),Y", args[0])
         }
 
-        // BCC *+4 => 90 04
+        // BCC $0490 => 90 04
         AddressingMode::Relative => {
-            format!("*+{:X}", args[0])
+            format!("${:<04X}", program_counter+args[0] as u16 + 2)
         }
 
         AddressingMode::NoneAddressing => {
-            panic!("mode {:?} is not supported", mode)
+            panic!("mode {:?} is not supported", ops.addressing_mode)
         }
     }
 }
 
-fn memory_access(cpu: &CPU, mode: AddressingMode, args: &Vec<u8>) -> String {
-    match mode {
+fn memory_access(cpu: &CPU, ops: &OpCode, args: &Vec<u8>) -> String {
+    if ops.mnemonic.starts_with("J") {
+        if ops.addressing_mode == AddressingMode::Indirect {
+            let hi = args[1] as u16;
+            let lo = args[0] as u16;
+            let addr = hi << 8 | lo;
+            
+            let value = cpu.mem_read_u16(addr);
+            return format!("= {:<04X}",value);
+        }
+        return format!("");
+    }
+
+    match ops.addressing_mode {
+        AddressingMode::Absolute => {
+            let hi = args[1] as u16;
+            let lo = args[0] as u16;
+            let addr = hi << 8 | lo;
+            let value = cpu.mem_read(addr);
+            format!("= {:<02X}", value)
+        }
+
+        AddressingMode::ZeroPage => {
+            let value = cpu.mem_read(args[0] as u16);
+            format!("= {:<02X}", value)
+        }
+
         AddressingMode::Indirect_X => {
             let base = args[0];
             let ptr: u8 = (base as u8).wrapping_add(cpu.register_x);
