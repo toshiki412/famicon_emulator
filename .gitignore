@@ -2,3 +2,4 @@ target
 Readme.md
 .vscode
 rom
+*.log

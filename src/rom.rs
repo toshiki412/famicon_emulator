@@ -56,12 +56,12 @@ impl Rom {
         })
     }
 
-    pub fn empty() -> Self {
-        return Rom {
-            prg_rom: vec![],
-            chr_rom: vec![],
-            mapper: 0,
-            screen_mirroring: Mirroring::VERTICAL,
-        }; 
-    }
+    // pub fn empty() -> Self {
+    //     return Rom {
+    //         prg_rom: vec![],
+    //         chr_rom: vec![],
+    //         mapper: 0,
+    //         screen_mirroring: Mirroring::VERTICAL,
+    //     }; 
+    // }
 }

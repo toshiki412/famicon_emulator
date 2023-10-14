@@ -206,12 +206,12 @@ impl CPU {
         self.mem_write(pos + 1, hi);
     }
 
-    pub fn load_and_run(&mut self, _program: Vec<u8>) {
-        // self.load(program);
-        self.load();
-        self.reset();
-        self.run();
-    }
+    // pub fn load_and_run(&mut self, _program: Vec<u8>) {
+    //     // self.load(program);
+    //     self.load();
+    //     self.reset();
+    //     self.run();
+    // }
 
     pub fn reset(&mut self) {
         self.register_a = 0;
@@ -228,16 +228,16 @@ impl CPU {
         self.program_counter = 0xC000;
     }
 
-    pub fn load(&mut self) {
-    // pub fn load(&mut self, program: Vec<u8>) {
-        //8000番地から上にカートリッジ（ファミコンのカセット、プログラム）のデータを書き込む
-        // self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
-        // self.mem_write_u16(0xFFFC, 0x8000);
-    }
+    // pub fn load(&mut self) {
+    // // pub fn load(&mut self, program: Vec<u8>) {
+    //     //8000番地から上にカートリッジ（ファミコンのカセット、プログラム）のデータを書き込む
+    //     // self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
+    //     // self.mem_write_u16(0xFFFC, 0x8000);
+    // }
 
-    pub fn run(&mut self) {
-        self.run_with_callback(|cpu| {});
-    }
+    // pub fn run(&mut self) {
+    //     self.run_with_callback(|cpu| {});
+    // }
 
     pub fn run_with_callback<F>(&mut self, mut callback: F)
         where 
@@ -258,7 +258,9 @@ impl CPU {
                             callback(self);
                             call(self, &op); 
                         }
-                        _ => {}
+                        _ => {
+                            // panic!("no implementation")
+                        }
                     }
                 }
             }
@@ -270,6 +272,91 @@ impl CPU {
             }
         }
         return None
+    }
+
+    pub fn anc(&mut self, mode: &AddressingMode){
+
+    }
+
+    pub fn arr(&mut self, mode: &AddressingMode){
+
+    }
+
+    pub fn asr(&mut self, mode: &AddressingMode){
+
+    }
+
+    pub fn lxa(&mut self, mode: &AddressingMode){
+
+    }
+
+    pub fn sha(&mut self, mode: &AddressingMode){
+
+    }
+
+    pub fn sbx(&mut self, mode: &AddressingMode){
+
+    }
+
+    pub fn jam(&mut self, mode: &AddressingMode){
+
+    }
+
+    pub fn lae(&mut self, mode: &AddressingMode){
+
+    }
+
+    pub fn rra(&mut self, mode: &AddressingMode){
+        self.ror(mode);
+        self.adc(mode);
+    }
+
+    pub fn sre(&mut self, mode: &AddressingMode){
+        self.lsr(mode);
+        self.eor(mode);
+    }
+
+    pub fn shx(&mut self, mode: &AddressingMode){
+
+    }
+
+    pub fn shy(&mut self, mode: &AddressingMode){
+
+    }
+
+    pub fn ane(&mut self, mode: &AddressingMode){
+
+    }
+
+    pub fn rla(&mut self, mode: &AddressingMode) {
+        self.rol(mode);
+        self.and(mode);
+    }
+
+    pub fn slo(&mut self, mode: &AddressingMode) {
+        self.asl(mode);
+        self.ora(mode);
+    }
+
+    pub fn isb(&mut self, mode: &AddressingMode) {
+        // = ISC
+        self.inc(mode);
+        self.sbc(mode);
+    }
+
+    pub fn dcp(&mut self, mode: &AddressingMode) {
+        self.dec(mode);
+        self.cmp(mode);
+    }
+
+    pub fn sax(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        self.mem_write(addr, self.register_a & self.register_x);
+    }
+
+    pub fn lax(&mut self, mode: &AddressingMode) {
+        self.lda(mode);
+        self.tax(mode);
     }
 
     pub fn txs(&mut self, _mode: &AddressingMode) {
@@ -789,7 +876,7 @@ pub fn trace(cpu: &mut CPU) -> String {
     let memacc = memory_access(cpu, &ops, &args);
     let status = cpu2str(cpu);
 
-    format!("{:<6}{:<10}{:<32}{}", pc, bin, vec![asm, memacc].join(" "), status)
+    format!("{:<6}{:<9}{:<33}{}", pc, bin, vec![asm, memacc].join(" "), status)
 }
 
 fn binary(op: u8, args: &Vec<u8>) -> String {
@@ -803,7 +890,9 @@ fn binary(op: u8, args: &Vec<u8>) -> String {
 }
 
 fn disasm(program_counter: u16, ops: &OpCode, args: &Vec<u8>) -> String {
-    return format!("{} {}", 
+    let prefix = if ops.mnemonic.starts_with("*") { "" } else { " " };
+    return format!("{}{} {}", 
+                    prefix,
                     ops.mnemonic, 
                     address(program_counter, &ops, &args)
                 );
@@ -869,7 +958,7 @@ fn address(program_counter: u16, ops: &OpCode, args: &Vec<u8>) -> String {
 
         // BCC $0490 => 90 04
         AddressingMode::Relative => {
-            format!("${:<04X}", program_counter+args[0] as u16 + 2)
+            format!("${:<04X}", (program_counter as i32 + (args[0] as i8) as i32) as u16 + 2)
         }
 
         AddressingMode::NoneAddressing => {
@@ -900,9 +989,39 @@ fn memory_access(cpu: &CPU, ops: &OpCode, args: &Vec<u8>) -> String {
             format!("= {:<02X}", value)
         }
 
+        AddressingMode::Absolute_X => {
+            let hi = args[1] as u16;
+            let lo = args[0] as u16;
+            let base = hi << 8 | lo;
+            let addr = base.wrapping_add(cpu.register_x as u16);
+            let value = cpu.mem_read(addr);
+            format!("@ {:<04X} = {:<02X}", addr, value)
+        }
+
+        AddressingMode::Absolute_Y => {
+            let hi = args[1] as u16;
+            let lo = args[0] as u16;
+            let base = hi << 8 | lo;
+            let addr = base.wrapping_add(cpu.register_y as u16);
+            let value = cpu.mem_read(addr);
+            format!("@ {:<04X} = {:<02X}", addr, value)
+        }
+
         AddressingMode::ZeroPage => {
             let value = cpu.mem_read(args[0] as u16);
             format!("= {:<02X}", value)
+        }
+
+        AddressingMode::ZeroPage_X => {
+            let addr = args[0].wrapping_add(cpu.register_x) as u16;
+            let value = cpu.mem_read(addr);
+            format!("@ {:<02X} = {:<02X}", addr, value)
+        }
+
+        AddressingMode::ZeroPage_Y => {
+            let addr = args[0].wrapping_add(cpu.register_y) as u16;
+            let value = cpu.mem_read(addr);
+            format!("@ {:<02X} = {:<02X}", addr, value)
         }
 
         AddressingMode::Indirect_X => {
