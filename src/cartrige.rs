@@ -16,9 +16,9 @@ pub fn load_rom(path: &str) -> Rom {
 pub mod test {    
     use super::*; //外側の関数とuseを全部持ってくる
 
-    pub fn snake_rom() -> Rom {
-        load_rom("rom/snake.nes")
-    }
+    // pub fn snake_rom() -> Rom {
+    //     load_rom("rom/snake.nes")
+    // }
 
     pub fn test_rom() -> Rom {
         load_rom("rom/nestest.nes")
