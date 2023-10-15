@@ -5,19 +5,19 @@ use crate::bus::{Bus,Mem};
 #[derive(Debug, Clone, PartialEq)] //deriveは継承。Debugトレイトを継承。
 #[allow(non_camel_case_types)] //allowはリンカに対してnon_camel_case_typeのエラーを出さないようにする
 pub enum AddressingMode {
-    Accumulator,
-    Immediate,  //PCの値をそのままアキュムレータ(a)に入れる。
-    ZeroPage,   //アドレスの指す先の値を入れる
-    ZeroPage_X, //アドレス+xレジスタのアドレスの指す先の値を入れる
-    ZeroPage_Y, //yレジスタバージョン
-    Absolute,   //直接アドレスを指定してそのアドレスの指す先の値を入れる。
-    Absolute_X, //absoluteにxレジスタの値分足したアドレスを指定する。
-    Absolute_Y, //yレジスタバージョン
-    Indirect,   //JMP命令のみ使用。
-    Indirect_X,
-    Indirect_Y,
-    Relative,
-    Implied,
+    Accumulator,//LDA #10    アキュムレータ(a)にデータを格納するモード
+    Immediate,  //LDA #$0A   PCの値をそのままアキュムレータ(a)に入れる。
+    ZeroPage,   //LDA $20    アドレスの指す先の値を入れる(この場合0x20番地のデータ)
+    ZeroPage_X, //LDA $20,X  アドレス+xレジスタのアドレスの指す先の値を入れる
+    ZeroPage_Y, //LDA $20,Y  yレジスタバージョン(Yが10なら0x20+0x10=0x30番地の値)
+    Absolute,   //LDA $2000　直接アドレスを指定してそのアドレスの指す先の値を入れる。機械語だとAD 00 20 とリトルエンディアン
+    Absolute_X, //LDA $2000,X　absoluteにxレジスタの値分足したアドレスを指定する。X=10なら0x2010番地のデータ
+    Absolute_Y, //LDA $2000,Y yレジスタバージョン
+    Indirect,   //JMP ($10)  JMP命令のみ使用。0x10に0x20が格納されている場合、0x20番地に飛ぶ。
+    Indirect_X, //LDA ($05,X) X=0x06の場合(0x05+0x06)=0x0B番地のデータを見る
+    Indirect_Y, //LDA ($10),Y 0x10に0x22が格納されていて、Y=0x10のとき、0x10のアドレス先のアドレス0x22に0x10を足した0x32番地のデータを見る
+    Relative,   //BEQ Label  相対的なオフセットを指定してジャンプ
+    Implied,    //CLC        アドレス指定が不要で、命令自体が操作対象のレジスタに作用するモード
     NoneAddressing,
 }
 
@@ -272,6 +272,10 @@ impl CPU {
             }
         }
         return None
+    }
+
+    pub fn shs(&mut self, mode: &AddressingMode){
+
     }
 
     pub fn anc(&mut self, mode: &AddressingMode){
