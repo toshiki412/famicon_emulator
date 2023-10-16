@@ -1,7 +1,10 @@
 {
-    // "editor.formatOnSave": true,
-    // "rust-analyzer.inlayHints.typeHints.enable": false,
-    // "rust-analyzer.inlayHints.parameterHints.enable": false,
-    // "rust-analyzer.inlayHints.closingBraceHints.enable": false,
-    // "rust-analyzer.showUnlinkedFileNotification": false
+    "rust-analyzer.linkedProjects": [
+        "./Cargo.toml"
+    ]
+    "editor.formatOnSave": true,
+    "rust-analyzer.inlayHints.typeHints.enable": false,
+    "rust-analyzer.inlayHints.parameterHints.enable": false,
+    "rust-analyzer.inlayHints.closingBraceHints.enable": false,
+    "rust-analyzer.showUnlinkedFileNotification": false
 }

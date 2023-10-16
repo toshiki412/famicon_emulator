@@ -1,4 +1,5 @@
 use crate::rom::Mirroring;
+use bitflags::bitflags;
 
 pub struct NesPPU {
     pub chr_rom: Vec<u8>,
@@ -10,6 +11,10 @@ pub struct NesPPU {
 
     addr: AddrRegister,
     pub ctrl: ControlRegister,
+    internal_data_buf: u8,
+
+    cycles: usize,
+    scanline: usize,
 }
 
 impl NesPPU {
@@ -17,19 +22,24 @@ impl NesPPU {
     pub fn new(chr_rom: Vec<u8>, mirroring: Mirroring) -> Self {
         NesPPU {
             chr_rom: chr_rom,
-            mirroring: mirroring,
-            vram: [0; 2048],
-            oam_data: [0; 64*4],
             palette_table: [0; 32],
+            vram: [0; 2048],
+            oam_data: [0; 64 * 4],
+            mirroring: mirroring,
+            addr: AddrRegister::new(),
+            ctrl: ControlRegister::new(),
+            internal_data_buf: 0,
+            cycles: 0,
+            scanline: 0,
         }
     }
 
-    fn write_to_ppu_addr(&mut self, value: u8) {
+    pub fn write_to_ppu_addr(&mut self, value: u8) {
         self.addr.update(value);
     }
 
     //0x2000のコントロールレジスタへの書き込み
-    fn write_to_ctrl(&mut self, value: u8) {
+    pub fn write_to_ctrl(&mut self, value: u8) {
         self.ctrl.update(value);
     }
 
@@ -37,19 +47,65 @@ impl NesPPU {
         self.addr.increment(self.ctrl.vram_addr_increment());
     }
 
-    fn read_data(&mut self) -> u8 {
+    pub fn read_data(&mut self) -> u8 {
         let addr = self.addr.get();
         self.increment_vram_addr();
 
         match addr {
-            0..=0x1FFF => todo!("read from chr_rom"),
-            0x2000..=0x2FFF => todo!("read from RAM"),
-            0x3000..=0x3EFF => panic!("addr space 0x3000..0x3eff is not expected to be use, request = {}", addr),
-            0x3F00..=0x3FFF => {
-                self.palette_table[(addr - 0x3F00) as usize]
+            0..=0x1FFF => {
+                let result = self.internal_data_buf;
+                self.internal_data_buf = self.chr_rom[addr as usize];
+                result
             }
+            0x2000..=0x2FFF => {
+                let result = self.internal_data_buf;
+                self.internal_data_buf = self.vram[self.mirror_vram_addr(addr) as usize];
+                result
+            }
+            0x3000..=0x3EFF => panic!(
+                "addr space 0x3000..0x3eff is not expected to be use, request = {}",
+                addr
+            ),
+            0x3F00..=0x3FFF => self.palette_table[(addr - 0x3F00) as usize],
             _ => panic!("unexpected access to mirrored space {}", addr),
         }
+    }
+
+    pub fn mirror_vram_addr(&self, addr: u16) -> u16 {
+        let mirrored_vram = addr & 0b10_1111_1111_1111;
+        let vram_index = mirrored_vram - 0x2000;
+        let name_table = vram_index / 0x400;
+        match (&self.mirroring, name_table) {
+            (Mirroring::VERTICAL, 2) => vram_index - 0x800,
+            (Mirroring::VERTICAL, 3) => vram_index - 0x800,
+            (Mirroring::HORIZONTAL, 2) => vram_index - 0x400,
+            (Mirroring::HORIZONTAL, 1) => vram_index - 0x400,
+            (Mirroring::HORIZONTAL, 3) => vram_index - 0x800,
+        }
+    }
+
+    pub fn tick(&mut self, cycles: u8) -> bool {
+        self.cycles += cycles as usize;
+        //画面一列で341サイクル
+        if self.cycles >= 341 {
+            self.cycles = self.cycles - 341;
+            self.scanline += 1;
+
+            //0~262lineのうち241~は画面外
+            if self.scanline == 241 {
+                if self.ctrl.generate_vblank_nmi() {
+                    self.status.set_vblank_status(true);
+                    todo!("Should trigger NMI interrupt")
+                }
+            }
+
+            if self.scanline >= 262 {
+                self.scanline = 0;
+                self.status.reset_vblank_status();
+                return true;
+            }
+        }
+        return false;
     }
 }
 
@@ -127,7 +183,7 @@ bitflags! {
 }
 
 impl ControlRegister {
-    pub fn new () -> Self {
+    pub fn new() -> Self {
         ControlRegister::from_bits_truncate(0b0000_0000)
     }
 
@@ -140,6 +196,7 @@ impl ControlRegister {
     }
 
     pub fn update(&mut self, data: u8) {
-        self.bits = data;
+        // self.bits = data;?
+        *self.0.bits_mut() = data;
     }
 }
