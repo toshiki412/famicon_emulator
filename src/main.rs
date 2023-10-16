@@ -7,6 +7,7 @@ mod opscodes;
 mod bus;
 mod rom;
 mod cartrige;
+mod ppu;
 
 use self::cpu::CPU;
 use crate::cartrige::test::test_rom;

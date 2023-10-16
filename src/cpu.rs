@@ -1,16 +1,16 @@
 use crate::opscodes::{call, CPU_OPS_CODES};
 
-use crate::bus::{Bus,Mem};
+use crate::bus::{Bus, Mem};
 
 #[derive(Debug, Clone, PartialEq)] //deriveは継承。Debugトレイトを継承。
 #[allow(non_camel_case_types)] //allowはリンカに対してnon_camel_case_typeのエラーを出さないようにする
 pub enum AddressingMode {
-    Accumulator,//LDA #10    アキュムレータ(a)にデータを格納するモード
-    Immediate,  //LDA #$0A   PCの値をそのままアキュムレータ(a)に入れる。
-    ZeroPage,   //LDA $20    アドレスの指す先の値を入れる(この場合0x20番地のデータ)
-    ZeroPage_X, //LDA $20,X  アドレス+xレジスタのアドレスの指す先の値を入れる
-    ZeroPage_Y, //LDA $20,Y  yレジスタバージョン(Yが10なら0x20+0x10=0x30番地の値)
-    Absolute,   //LDA $2000　直接アドレスを指定してそのアドレスの指す先の値を入れる。機械語だとAD 00 20 とリトルエンディアン
+    Accumulator, //LDA #10    アキュムレータ(a)にデータを格納するモード
+    Immediate,   //LDA #$0A   PCの値をそのままアキュムレータ(a)に入れる。
+    ZeroPage,    //LDA $20    アドレスの指す先の値を入れる(この場合0x20番地のデータ)
+    ZeroPage_X,  //LDA $20,X  アドレス+xレジスタのアドレスの指す先の値を入れる
+    ZeroPage_Y,  //LDA $20,Y  yレジスタバージョン(Yが10なら0x20+0x10=0x30番地の値)
+    Absolute, //LDA $2000　直接アドレスを指定してそのアドレスの指す先の値を入れる。機械語だとAD 00 20 とリトルエンディアン
     Absolute_X, //LDA $2000,X　absoluteにxレジスタの値分足したアドレスを指定する。X=10なら0x2010番地のデータ
     Absolute_Y, //LDA $2000,Y yレジスタバージョン
     Indirect,   //JMP ($10)  JMP命令のみ使用。0x10に0x20が格納されている場合、0x20番地に飛ぶ。
@@ -26,7 +26,7 @@ pub struct OpCode {
     pub code: u8,
     pub mnemonic: String,
     pub bytes: u16,
-    pub cycles: u16,
+    pub cycles: u8,
     pub addressing_mode: AddressingMode,
 }
 
@@ -187,7 +187,7 @@ impl CPU {
     //指定したアドレス(pos)から2バイト(16bit)のデータを読む関数
     pub fn mem_read_u16(&self, pos: u16) -> u16 {
         // FIXME ページ境界
-        if pos == 0xFF || pos == 0x02FF{
+        if pos == 0xFF || pos == 0x02FF {
             let lo = self.mem_read(pos) as u16;
             let hi = self.mem_read(pos & 0xFF00) as u16;
             return (hi << 8) | (lo as u16);
@@ -240,30 +240,51 @@ impl CPU {
     // }
 
     pub fn run_with_callback<F>(&mut self, mut callback: F)
-        where 
-            F: FnMut(&mut CPU),
-            {
-                
-                loop {
-                    let opscode = self.mem_read(self.program_counter);
-                    self.program_counter += 1;
+    where
+        F: FnMut(&mut CPU),
+    {
+        loop {
+            if let Some(_nmi) = self.bus.poll_nmi_status() {
+                self.interrupt_nmi();
+            }
 
-                    let op = self.find_ops(opscode);
-                    match op {
-                        Some(op) => {
-                            // FIXME FOR TEST
-                            if op.mnemonic == "BRK" {
-                                return;
-                            }
-                            callback(self);
-                            call(self, &op); 
-                        }
-                        _ => {
-                            // panic!("no implementation")
-                        }
+            let opscode = self.mem_read(self.program_counter);
+            self.program_counter += 1;
+
+            let op = self.find_ops(opscode);
+            match op {
+                Some(op) => {
+                    // FIXME FOR TEST
+                    if op.mnemonic == "BRK" {
+                        return;
                     }
+                    callback(self);
+                    call(self, &op);
+
+                    self.bus.tick(op.cycles as u8);
+                    // if program_counter_state == self.program_counter {
+                    //     self.program_counter += (op.len - 1) as u16
+                    // }
+                }
+                _ => {
+                    // panic!("no implementation")
                 }
             }
+        }
+    }
+
+    fn interrupt_nmi(&mut self) {
+        self._push_u16(self.program_counter);
+        let mut status = self.status;
+        status = status & !FLAG_BREAK;
+        status = status | FLAG_BREAK2;
+
+        self._push(status);
+        self.status = self.status | FLAG_INTERRRUPT;
+
+        self.bus.tick(2);
+        self.program_counter = self.mem_read_u16(0xFFFA);
+    }
 
     fn find_ops(&mut self, opscode: u8) -> Option<OpCode> {
         for op in CPU_OPS_CODES.iter() {
@@ -271,66 +292,42 @@ impl CPU {
                 return Some(op.clone());
             }
         }
-        return None
+        return None;
     }
 
-    pub fn shs(&mut self, mode: &AddressingMode){
+    pub fn shs(&mut self, mode: &AddressingMode) {}
 
-    }
+    pub fn anc(&mut self, mode: &AddressingMode) {}
 
-    pub fn anc(&mut self, mode: &AddressingMode){
+    pub fn arr(&mut self, mode: &AddressingMode) {}
 
-    }
+    pub fn asr(&mut self, mode: &AddressingMode) {}
 
-    pub fn arr(&mut self, mode: &AddressingMode){
+    pub fn lxa(&mut self, mode: &AddressingMode) {}
 
-    }
+    pub fn sha(&mut self, mode: &AddressingMode) {}
 
-    pub fn asr(&mut self, mode: &AddressingMode){
+    pub fn sbx(&mut self, mode: &AddressingMode) {}
 
-    }
+    pub fn jam(&mut self, mode: &AddressingMode) {}
 
-    pub fn lxa(&mut self, mode: &AddressingMode){
+    pub fn lae(&mut self, mode: &AddressingMode) {}
 
-    }
-
-    pub fn sha(&mut self, mode: &AddressingMode){
-
-    }
-
-    pub fn sbx(&mut self, mode: &AddressingMode){
-
-    }
-
-    pub fn jam(&mut self, mode: &AddressingMode){
-
-    }
-
-    pub fn lae(&mut self, mode: &AddressingMode){
-
-    }
-
-    pub fn rra(&mut self, mode: &AddressingMode){
+    pub fn rra(&mut self, mode: &AddressingMode) {
         self.ror(mode);
         self.adc(mode);
     }
 
-    pub fn sre(&mut self, mode: &AddressingMode){
+    pub fn sre(&mut self, mode: &AddressingMode) {
         self.lsr(mode);
         self.eor(mode);
     }
 
-    pub fn shx(&mut self, mode: &AddressingMode){
+    pub fn shx(&mut self, mode: &AddressingMode) {}
 
-    }
+    pub fn shy(&mut self, mode: &AddressingMode) {}
 
-    pub fn shy(&mut self, mode: &AddressingMode){
-
-    }
-
-    pub fn ane(&mut self, mode: &AddressingMode){
-
-    }
+    pub fn ane(&mut self, mode: &AddressingMode) {}
 
     pub fn rla(&mut self, mode: &AddressingMode) {
         self.rol(mode);
@@ -408,7 +405,7 @@ impl CPU {
     }
 
     pub fn rti(&mut self, _mode: &AddressingMode) {
-        self.status = self._pop()& !FLAG_BREAK | FLAG_BREAK2;
+        self.status = self._pop() & !FLAG_BREAK | FLAG_BREAK2;
         self.program_counter = self._pop_u16();
     }
 
@@ -465,14 +462,13 @@ impl CPU {
         let addr = self.get_operand_address(mode);
 
         //PC+2が次の命令の頭になる. ただし、リターンポイントのアドレス-1をスタックにプッシュ
-        self._push_u16(self.program_counter + 2 - 1); 
+        self._push_u16(self.program_counter + 2 - 1);
 
         self.program_counter = addr;
         //後で+2するので整合性のため-2しておく
         // self.program_counter -= 2;
         self.program_counter = self.program_counter.wrapping_sub(2);
     }
-
 
     // FD  FE FF
     // 00  00 00
@@ -481,7 +477,7 @@ impl CPU {
         let addr = 0x0100 + self.stack_pointer as u16; //NESのスタック領域は0x0100~0x01FF
         self.mem_write(addr, value);
         //0x01ffに書き込んだのでスタックポインタを0x01feを指すようにする
-        self.stack_pointer  = self.stack_pointer.wrapping_sub(1); 
+        self.stack_pointer = self.stack_pointer.wrapping_sub(1);
     }
 
     pub fn _pop(&mut self) -> u8 {
@@ -494,7 +490,7 @@ impl CPU {
         //mem_write_u16するためにaddrを一回0x01FEまで下げて、そこから2byte分(FE,FF)を書き込ませる
         let addr = 0x0100 + self.stack_pointer.wrapping_sub(1) as u16;
         self.mem_write_u16(addr, value);
-        self.stack_pointer  = self.stack_pointer.wrapping_sub(2);
+        self.stack_pointer = self.stack_pointer.wrapping_sub(2);
     }
 
     pub fn _pop_u16(&mut self) -> u16 {
@@ -513,7 +509,7 @@ impl CPU {
         self.program_counter -= 2;
         // TODO
         // オリジナルの 6502 は、間接ベクトルがページ境界にある場合、
-        // ターゲット アドレスを正しくフェッチしません 
+        // ターゲット アドレスを正しくフェッチしません
         // (たとえば、$xxFF で、xx は $00 から $FF までの任意の値です)。
         // この場合、予想どおり $xxFF から LSB を取得しますが、$xx00 から MSB を取得します。
         // これは、65SC02 などの最近のチップで修正されているため、互換性のために、
@@ -861,11 +857,10 @@ impl CPU {
             self.status & !FLAG_NEGATIVE
         }
     }
-
 }
 
 pub fn trace(cpu: &mut CPU) -> String {
-    let program_counter = cpu.program_counter -1;
+    let program_counter = cpu.program_counter - 1;
     let pc = format!("{:<04X}", program_counter);
     let op = cpu.mem_read(program_counter);
     let ops = cpu.find_ops(op).unwrap();
@@ -880,7 +875,13 @@ pub fn trace(cpu: &mut CPU) -> String {
     let memacc = memory_access(cpu, &ops, &args);
     let status = cpu2str(cpu);
 
-    format!("{:<6}{:<9}{:<33}{}", pc, bin, vec![asm, memacc].join(" "), status)
+    format!(
+        "{:<6}{:<9}{:<33}{}",
+        pc,
+        bin,
+        vec![asm, memacc].join(" "),
+        status
+    )
 }
 
 fn binary(op: u8, args: &Vec<u8>) -> String {
@@ -894,12 +895,17 @@ fn binary(op: u8, args: &Vec<u8>) -> String {
 }
 
 fn disasm(program_counter: u16, ops: &OpCode, args: &Vec<u8>) -> String {
-    let prefix = if ops.mnemonic.starts_with("*") { "" } else { " " };
-    return format!("{}{} {}", 
-                    prefix,
-                    ops.mnemonic, 
-                    address(program_counter, &ops, &args)
-                );
+    let prefix = if ops.mnemonic.starts_with("*") {
+        ""
+    } else {
+        " "
+    };
+    return format!(
+        "{}{} {}",
+        prefix,
+        ops.mnemonic,
+        address(program_counter, &ops, &args)
+    );
 }
 
 fn address(program_counter: u16, ops: &OpCode, args: &Vec<u8>) -> String {
@@ -962,7 +968,10 @@ fn address(program_counter: u16, ops: &OpCode, args: &Vec<u8>) -> String {
 
         // BCC $0490 => 90 04
         AddressingMode::Relative => {
-            format!("${:<04X}", (program_counter as i32 + (args[0] as i8) as i32) as u16 + 2)
+            format!(
+                "${:<04X}",
+                (program_counter as i32 + (args[0] as i8) as i32) as u16 + 2
+            )
         }
 
         AddressingMode::NoneAddressing => {
@@ -977,9 +986,9 @@ fn memory_access(cpu: &CPU, ops: &OpCode, args: &Vec<u8>) -> String {
             let hi = args[1] as u16;
             let lo = args[0] as u16;
             let addr = hi << 8 | lo;
-            
+
             let value = cpu.mem_read_u16(addr);
-            return format!("= {:<04X}",value);
+            return format!("= {:<04X}", value);
         }
         return format!("");
     }
@@ -1035,30 +1044,25 @@ fn memory_access(cpu: &CPU, ops: &OpCode, args: &Vec<u8>) -> String {
             let value = cpu.mem_read(addr);
             format!("@ {:<02X} = {:<04X} = {:<02X}", ptr, addr, value)
         }
-        
+
         AddressingMode::Indirect_Y => {
             let base = args[0];
             let deref_base = cpu.mem_read_u16(base as u16);
             let deref = deref_base.wrapping_add(cpu.register_y as u16);
             let value = cpu.mem_read(deref);
-            format!("= {:<04X} @ {:<04X} = {:<02X}",deref_base, deref, value)
+            format!("= {:<04X} @ {:<04X} = {:<02X}", deref_base, deref, value)
         }
 
         _ => {
             format!("")
         }
-
     }
 }
 
 fn cpu2str(cpu: &CPU) -> String {
     format!(
-        "A:{:<02X} X:{:<02X} Y:{:<02X} P:{:<02X} SP:{:<02X}", 
-        cpu.register_a,
-        cpu.register_x,
-        cpu.register_y,
-        cpu.status,
-        cpu.stack_pointer
+        "A:{:<02X} X:{:<02X} Y:{:<02X} P:{:<02X} SP:{:<02X}",
+        cpu.register_a, cpu.register_x, cpu.register_y, cpu.status, cpu.stack_pointer
     )
 }
 
@@ -1110,7 +1114,7 @@ mod test {
         // ORA ($33), Y
         bus.mem_write(100, 0x11);
         bus.mem_write(101, 0x33);
-        
+
         // data
         bus.mem_write(0x33, 0x00);
         bus.mem_write(0x34, 0x04);
@@ -1132,7 +1136,6 @@ mod test {
             result[0]
         );
     }
-
 
     /*　instruction test
 
