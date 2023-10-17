@@ -31,6 +31,10 @@ impl Bus {
         self.cycles += cycles as usize;
         self.ppu.tick(cycles * 3);
     }
+
+    pub fn poll_nmi_status(&mut self) -> Option<i32> {
+        self.ppu.nmi_interrupt
+    }
 }
 
 const RAM: u16 = 0x0000;
@@ -42,12 +46,12 @@ const PRG_ROM: u16 = 0x8000;
 const PRG_ROM_END: u16 = 0xFFFF;
 
 pub trait Mem {
-    fn mem_read(&self, addr: u16) -> u8;
+    fn mem_read(&mut self, addr: u16) -> u8;
     fn mem_write(&mut self, addr: u16, data: u8);
 }
 
 impl Mem for Bus {
-    fn mem_read(&self, addr: u16) -> u8 {
+    fn mem_read(&mut self, addr: u16) -> u8 {
         match addr {
             RAM..=RAM_MIRRORS_END => {
                 //0x0000 ~ 0x1fff
