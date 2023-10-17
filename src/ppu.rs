@@ -9,12 +9,14 @@ pub struct NesPPU {
 
     pub mirroring: Mirroring,
 
-    addr: AddrRegister,
-    pub ctrl: ControlRegister,
+    addr: AddrRegister,        //0x2006(0x2007)
+    pub ctrl: ControlRegister, //0x2000
     internal_data_buf: u8,
+    status: StatusRegister, //0x2002
 
     cycles: usize,
     scanline: usize,
+    pub nmi_interrupt: Option<i32>,
 }
 
 impl NesPPU {
@@ -28,9 +30,11 @@ impl NesPPU {
             mirroring: mirroring,
             addr: AddrRegister::new(),
             ctrl: ControlRegister::new(),
+            status: StatusRegister::new(),
             internal_data_buf: 0,
             cycles: 0,
             scanline: 0,
+            nmi_interrupt: None,
         }
     }
 
@@ -38,9 +42,19 @@ impl NesPPU {
         self.addr.update(value);
     }
 
+    pub fn write_to_data(&mut self, value: u8) {
+        let addr = self.addr.get();
+        self.increment_vram_addr();
+        self.vram[self.mirror_vram_addr(addr) as usize] = value;
+    }
+
     //0x2000のコントロールレジスタへの書き込み
     pub fn write_to_ctrl(&mut self, value: u8) {
+        let before_nmi_status = self.ctrl.generate_vblank_nmi();
         self.ctrl.update(value);
+        if !before_nmi_status && self.ctrl.generate_vblank_nmi() && self.status.is_in_vblank() {
+            self.nmi_interrupt = Some(1);
+        }
     }
 
     fn increment_vram_addr(&mut self) {
@@ -72,15 +86,22 @@ impl NesPPU {
     }
 
     pub fn mirror_vram_addr(&self, addr: u16) -> u16 {
+        // mirror down 0x3000~0x3eff to 0x2000~0x2eff
         let mirrored_vram = addr & 0b10_1111_1111_1111;
+
+        // to vram vector
         let vram_index = mirrored_vram - 0x2000;
+
+        // to the name table index
         let name_table = vram_index / 0x400;
+
         match (&self.mirroring, name_table) {
             (Mirroring::VERTICAL, 2) => vram_index - 0x800,
             (Mirroring::VERTICAL, 3) => vram_index - 0x800,
             (Mirroring::HORIZONTAL, 2) => vram_index - 0x400,
             (Mirroring::HORIZONTAL, 1) => vram_index - 0x400,
             (Mirroring::HORIZONTAL, 3) => vram_index - 0x800,
+            _ => vram_index,
         }
     }
 
@@ -198,5 +219,38 @@ impl ControlRegister {
     pub fn update(&mut self, data: u8) {
         // self.bits = data;?
         *self.0.bits_mut() = data;
+    }
+
+    pub fn generate_vblank_nmi(&mut self) -> bool {
+        let last_status = self.contains(ControlRegister::GENERATE_NMI);
+        self.set(ControlRegister::GENERATE_NMI, true);
+        last_status
+    }
+}
+
+bitflags! {
+    pub struct StatusRegister: u8 {
+        const PPU_OPEN_BUS          = 0b0001_1111;
+        const SPRITE_OVERFLOW       = 0b0010_0000;
+        const SPRITE_ZERO_HIT       = 0b0100_0000;
+        const VBLANK_HAS_STARTED    = 0b1000_0000;
+    }
+}
+
+impl StatusRegister {
+    pub fn new() -> Self {
+        StatusRegister::from_bits_truncate(0b0000_0000)
+    }
+
+    pub fn is_in_vblank(&mut self) -> bool {
+        self.contains(StatusRegister::VBLANK_HAS_STARTED)
+    }
+
+    pub fn set_vblank_status(&mut self, value: bool) {
+        self.set(StatusRegister::VBLANK_HAS_STARTED, value)
+    }
+
+    pub fn reset_vblank_status(&mut self) {
+        self.set_vblank_status(false)
     }
 }
