@@ -9,6 +9,7 @@ mod frame;
 mod opscodes;
 mod palette;
 mod ppu;
+mod render;
 mod rom;
 
 use self::cpu::CPU;
