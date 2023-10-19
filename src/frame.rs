@@ -1,4 +1,4 @@
-use crate::palette::palette;
+use crate::palette;
 
 pub struct Frame {
     pub data: Vec<u8>,
