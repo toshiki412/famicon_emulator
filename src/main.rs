@@ -30,7 +30,7 @@ use rand::Rng;
 
 fn main() {
     // let rom = test_rom();
-    // let rom = mario_rom();
+    let rom = mario_rom();
     // let bus = Bus::new(rom);
 
     // let mut cpu = CPU::new(bus);
