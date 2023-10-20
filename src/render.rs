@@ -2,7 +2,7 @@ use crate::frame::Frame;
 use crate::palette;
 use crate::ppu::NesPPU;
 
-pub fn render(ppu: NesPPU, frame: &mut Frame) {
+pub fn render(ppu: &NesPPU, frame: &mut Frame) {
     let bank = ppu.ctrl.bknd_pattern_addr();
 
     for i in 0..0x03c0 {
