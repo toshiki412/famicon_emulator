@@ -116,7 +116,8 @@ impl NesPPU {
             if self.scanline == 241 {
                 if self.ctrl.generate_vblank_nmi() {
                     self.status.set_vblank_status(true);
-                    todo!("Should trigger NMI interrupt")
+                    // todo!("Should trigger NMI interrupt")
+                    self.nmi_interrupt = Some(1);
                 }
             }
 
@@ -225,6 +226,14 @@ impl ControlRegister {
         let last_status = self.contains(ControlRegister::GENERATE_NMI);
         self.set(ControlRegister::GENERATE_NMI, true);
         last_status
+    }
+
+    pub fn bknd_pattern_addr(&self) -> u16 {
+        if !self.contains(ControlRegister::BACKGROUND_PATTERN_ADDR) {
+            0x0000
+        } else {
+            0x1000
+        }
     }
 }
 

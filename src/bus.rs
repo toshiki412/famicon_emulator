@@ -1,21 +1,27 @@
 use crate::ppu::NesPPU;
 use crate::rom::Rom;
 
-pub struct Bus {
+pub struct Bus<'call> {
     cpu_vram: [u8; 2048],
     prg_rom: Vec<u8>,
     ppu: NesPPU,
     cycles: usize,
+
+    game_loop_callback: Box<dyn FnMut(&NesPPU) + 'call>,
 }
 
-impl Bus {
-    pub fn new(rom: Rom) -> Self {
+impl<'a> Bus<'a> {
+    pub fn new<'call, F>(rom: Rom, game_loop_callback: F) -> Bus<'call>
+    where
+        F: FnMut(&NesPPU) + 'call,
+    {
         let ppu = NesPPU::new(rom.chr_rom, rom.screen_mirroring);
         Bus {
             cpu_vram: [0; 2048],
             prg_rom: rom.prg_rom,
             ppu: ppu,
             cycles: 0,
+            game_loop_callback: Box::from(game_loop_callback),
         }
     }
 
@@ -29,7 +35,14 @@ impl Bus {
 
     pub fn tick(&mut self, cycles: u8) {
         self.cycles += cycles as usize;
+
+        let nmi_before = self.ppu.nmi_interrupt.is_some();
         self.ppu.tick(cycles * 3);
+        let nmi_after = self.ppu.nmi_interrupt.is_some();
+
+        if !nmi_before && nmi_after {
+            (self.game_loop_callback)(&self.ppu /* , &mut self.joypad1*/);
+        }
     }
 
     pub fn poll_nmi_status(&mut self) -> Option<i32> {
@@ -50,7 +63,7 @@ pub trait Mem {
     fn mem_write(&mut self, addr: u16, data: u8);
 }
 
-impl Mem for Bus {
+impl Mem for Bus<'_> {
     fn mem_read(&mut self, addr: u16) -> u8 {
         match addr {
             RAM..=RAM_MIRRORS_END => {
