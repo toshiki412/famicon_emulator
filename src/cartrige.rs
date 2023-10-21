@@ -26,4 +26,8 @@ pub mod test {
     pub fn mario_rom() -> Rom {
         load_rom("rom/mario.nes")
     }
+
+    pub fn alter_ego_rom() -> Rom {
+        load_rom("rom/Alter_Ego.nes")
+    }
 }
