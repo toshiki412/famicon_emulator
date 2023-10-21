@@ -28,8 +28,9 @@ impl<'a> Bus<'a> {
     fn read_prg_rom(&self, mut addr: u16) -> u8 {
         addr -= 0x8000;
         //programのromは16kB刻み prg_rom.len() == 0x4000は16kB
-        addr = addr % 0x4000;
-        if self.prg_rom.len() == 0x4000 && addr >= 0x4000 {}
+        if self.prg_rom.len() == 0x4000 && addr >= 0x4000 {
+            addr = addr % 0x4000;
+        }
         self.prg_rom[addr as usize]
     }
 
@@ -46,7 +47,9 @@ impl<'a> Bus<'a> {
     }
 
     pub fn poll_nmi_status(&mut self) -> Option<i32> {
-        self.ppu.nmi_interrupt
+        let res = self.ppu.nmi_interrupt;
+        self.ppu.nmi_interrupt = None;
+        res
     }
 }
 
@@ -68,16 +71,18 @@ impl Mem for Bus<'_> {
         match addr {
             RAM..=RAM_MIRRORS_END => {
                 //0x0000 ~ 0x1fff
-                let mirror_down_addr = addr & 0b0000_0111_1111_1111;
+                let mirror_down_addr = addr & 0b_0000_0111_1111_1111;
                 self.cpu_vram[mirror_down_addr as usize]
             }
 
             0x2000 | 0x2001 | 0x2003 | 0x2005 | 0x2006 | 0x4014 => {
                 panic!("Attempt to read from write-only PPU addr {:X}", addr);
             }
+            0x2002 => self.ppu.read_status(),
             0x2007 => self.ppu.read_data(),
             0x2008..=PPU_REGISTERS_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b00100000_00000111;
+                println!("HERE ADDR: {:X}", addr);
                 self.mem_read(mirror_down_addr)
             }
 
@@ -93,7 +98,7 @@ impl Mem for Bus<'_> {
     fn mem_write(&mut self, addr: u16, data: u8) {
         match addr {
             RAM..=RAM_MIRRORS_END => {
-                let mirror_down_addr = addr & 0b1111_1111_1111_1111;
+                let mirror_down_addr = addr & 0b_0000_0111_1111_1111;
                 self.cpu_vram[mirror_down_addr as usize] = data;
             }
 

@@ -8,9 +8,9 @@ pub enum Mirroring {
 }
 
 const NES_TAG: [u8; 4] = [0x4E, 0x45, 0x53, 0x1A]; //N E S ^Z
-// const NES_TAG: Vec<u8> = vec![0x4E, 0x45, 0x53, 0x1A]; //N E S ^Z
+                                                   // const NES_TAG: Vec<u8> = vec![0x4E, 0x45, 0x53, 0x1A]; //N E S ^Z
 const PRG_ROM_PAGE_SIZE: usize = 16 * 1024; // 16kiB
-const CHR_ROM_PAGE_SIZE: usize = 8 * 1024;  // 8kiB
+const CHR_ROM_PAGE_SIZE: usize = 8 * 1024; // 8kiB
 
 pub struct Rom {
     pub prg_rom: Vec<u8>,
@@ -27,17 +27,17 @@ impl Rom {
 
         let mapper = (raw[7] & 0b1111_0000) | (raw[6] >> 4);
 
-        let ines_ver = (raw[7] >> 2) & 0b11;
-        if ines_ver != 0 {
-            return Err("NES2.0 format is not supported".to_string());
-        }
+        // let ines_ver = (raw[7] >> 2) & 0b11;
+        // if ines_ver != 0 {
+        //     return Err("NES2.0 format is not supported".to_string());
+        // }
 
         let four_screen = raw[6] & 0b1000 != 0;
         let vertical_mirroring = raw[6] & 0b1 != 0;
         let screen_mirroring = match (four_screen, vertical_mirroring) {
-            (true, _ ) => Mirroring::FOUR_SCREEN,
-            (false, true ) => Mirroring::VERTICAL,
-            (false, false ) => Mirroring::HORIZONTAL,
+            (true, _) => Mirroring::FOUR_SCREEN,
+            (false, true) => Mirroring::VERTICAL,
+            (false, false) => Mirroring::HORIZONTAL,
         };
 
         let prg_rom_size = raw[4] as usize * PRG_ROM_PAGE_SIZE;
@@ -62,6 +62,6 @@ impl Rom {
     //         chr_rom: vec![],
     //         mapper: 0,
     //         screen_mirroring: Mirroring::VERTICAL,
-    //     }; 
+    //     };
     // }
 }

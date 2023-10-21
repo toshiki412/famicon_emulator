@@ -69,7 +69,7 @@ pub struct CPU<'a> {
     pub bus: Bus<'a>,
 }
 
-impl<'a> Mem for CPU<'a> {
+impl Mem for CPU<'_> {
     //指定したアドレス(addr)から1バイト(8bit)のデータを読む関数
     fn mem_read(&mut self, addr: u16) -> u8 {
         self.bus.mem_read(addr)
@@ -236,7 +236,7 @@ impl<'a> CPU<'a> {
     // }
 
     pub fn run(&mut self) {
-        self.run_with_callback(|cpu| {});
+        self.run_with_callback(|_| {});
     }
 
     pub fn run_with_callback<F>(&mut self, mut callback: F)
@@ -251,6 +251,7 @@ impl<'a> CPU<'a> {
             let opscode = self.mem_read(self.program_counter);
             self.program_counter += 1;
 
+            // println!("OPS: {:X}", opscode);
             let op = self.find_ops(opscode);
             match op {
                 Some(op) => {
@@ -261,7 +262,7 @@ impl<'a> CPU<'a> {
                     callback(self);
                     call(self, &op);
 
-                    self.bus.tick(op.cycles as u8);
+                    self.bus.tick(op.cycles);
                     // if program_counter_state == self.program_counter {
                     //     self.program_counter += (op.len - 1) as u16
                     // }
@@ -279,12 +280,12 @@ impl<'a> CPU<'a> {
         let mut status = self.status;
         status = status & !FLAG_BREAK;
         status = status | FLAG_BREAK2;
-
         self._push(status);
-        self.status = self.status | FLAG_INTERRRUPT;
 
+        self.status = self.status | FLAG_INTERRRUPT;
         self.bus.tick(2);
         self.program_counter = self.mem_read_u16(0xFFFA);
+        // println!("** interrupt_nmi {:X}", self.program_counter);
     }
 
     fn find_ops(&mut self, opscode: u8) -> Option<OpCode> {

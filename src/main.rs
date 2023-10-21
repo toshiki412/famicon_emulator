@@ -18,6 +18,7 @@ use crate::cpu::trace;
 // use self::rom::Rom;
 use self::bus::{Bus, Mem};
 
+use cartrige::test::alter_ego_rom;
 use cartrige::test::mario_rom;
 use frame::show_tile;
 use frame::Frame;
@@ -48,10 +49,12 @@ fn main() {
 
     let creator = canvas.texture_creator();
     let mut texture = creator
-        .create_texture_target(PixelFormatEnum::RGB24, 32, 32)
+        // .create_texture_target(PixelFormatEnum::RGB24, 32, 32)
+        .create_texture_target(PixelFormatEnum::RGB24, 256, 240)
         .unwrap();
 
-    let rom = test_rom();
+    let rom = alter_ego_rom();
+    // let rom = test_rom();
     // let rom = mario_rom();
     let mut frame = Frame::new();
     let bus = Bus::new(rom, move |ppu: &NesPPU| {

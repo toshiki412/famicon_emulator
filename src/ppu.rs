@@ -45,7 +45,21 @@ impl NesPPU {
     pub fn write_to_data(&mut self, value: u8) {
         let addr = self.addr.get();
         self.increment_vram_addr();
-        self.vram[self.mirror_vram_addr(addr) as usize] = value;
+        match addr {
+            0..=0x1FFF => {
+                // FIXME
+            }
+            0x2000..=0x2FFF => {
+                self.vram[self.mirror_vram_addr(addr) as usize] = value;
+            }
+            0x3000..=0x3EFF => {
+                // FIXME
+            }
+            0x3F00..=0x3FFF => {
+                self.palette_table[(addr - 0x3F00) as usize] = value;
+            }
+            _ => panic!("unexpected access to mirrored space {}", addr),
+        }
     }
 
     //0x2000のコントロールレジスタへの書き込み
@@ -55,6 +69,14 @@ impl NesPPU {
         if !before_nmi_status && self.ctrl.generate_vblank_nmi() && self.status.is_in_vblank() {
             self.nmi_interrupt = Some(1);
         }
+    }
+
+    pub fn read_status(&self) -> u8 {
+        self.status.bits()
+    }
+
+    pub fn write_to_status(&mut self, value: u8) {
+        self.status.update(value);
     }
 
     fn increment_vram_addr(&mut self) {
@@ -116,7 +138,7 @@ impl NesPPU {
             if self.scanline == 241 {
                 if self.ctrl.generate_vblank_nmi() {
                     self.status.set_vblank_status(true);
-                    // todo!("Should trigger NMI interrupt")
+                    // todo!("Should trigger NMI interrupt");
                     self.nmi_interrupt = Some(1);
                 }
             }
@@ -124,6 +146,8 @@ impl NesPPU {
             if self.scanline >= 262 {
                 self.scanline = 0;
                 self.status.reset_vblank_status();
+                //Fix me
+                self.nmi_interrupt = None;
                 return true;
             }
         }
@@ -225,7 +249,7 @@ impl ControlRegister {
     pub fn generate_vblank_nmi(&mut self) -> bool {
         let last_status = self.contains(ControlRegister::GENERATE_NMI);
         self.set(ControlRegister::GENERATE_NMI, true);
-        last_status
+        return last_status;
     }
 
     pub fn bknd_pattern_addr(&self) -> u16 {
@@ -261,5 +285,10 @@ impl StatusRegister {
 
     pub fn reset_vblank_status(&mut self) {
         self.set_vblank_status(false)
+    }
+
+    pub fn update(&mut self, data: u8) {
+        // TODO 要確認
+        *self.0.bits_mut() = data;
     }
 }
