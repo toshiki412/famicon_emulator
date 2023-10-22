@@ -81,7 +81,7 @@ fn main() {
     let mut cpu = CPU::new(bus);
     cpu.reset();
     // cpu.run();
-    cpu.run_with_callback(move |cpu| {
+    cpu.run_with_callback(move |_| {
         // println!("{}", trace(cpu));
     });
 
