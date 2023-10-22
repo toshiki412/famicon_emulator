@@ -21,12 +21,21 @@ pub enum AddressingMode {
     NoneAddressing,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+#[allow(non_camel_case_types)]
+pub enum CycleCalcMode {
+    None,
+    Page,
+    Branch,
+}
+
 #[derive(Debug, Clone)]
 pub struct OpCode {
     pub code: u8,
     pub mnemonic: String,
     pub bytes: u16,
     pub cycles: u8,
+    pub cycle_calc_mode: CycleCalcMode,
     pub addressing_mode: AddressingMode,
 }
 
@@ -36,6 +45,7 @@ impl OpCode {
         mnemonic: &str,
         bytes: u16,
         cycles: u8,
+        cycle_calc_mode: CycleCalcMode,
         addressing_mode: AddressingMode,
     ) -> Self {
         OpCode {
@@ -43,6 +53,7 @@ impl OpCode {
             mnemonic: String::from(mnemonic),
             bytes: bytes,
             cycles: cycles,
+            cycle_calc_mode: cycle_calc_mode,
             addressing_mode: addressing_mode,
         }
     }
@@ -67,6 +78,8 @@ pub struct CPU<'a> {
     pub stack_pointer: u8,
     // pub memory: [u8; 0x10000], // 0xFFFF
     pub bus: Bus<'a>,
+
+    pub add_cycles: u8,
 }
 
 impl Mem for CPU<'_> {
@@ -92,6 +105,7 @@ impl<'a> CPU<'a> {
             stack_pointer: 0xFD, //FIXME
             // memory: [0x00; 0x10000],
             bus: bus,
+            add_cycles: 0,
         }
     }
 
@@ -130,6 +144,11 @@ impl<'a> CPU<'a> {
             AddressingMode::Absolute_X => {
                 let base = self.mem_read_u16(self.program_counter);
                 let addr = base.wrapping_add(self.register_x as u16);
+                // +1 if page crossed
+                // 上位１バイトが違っていたらページをまたいだと判定
+                if base & 0xFF00 != addr & 0xFF00 {
+                    self.add_cycles += 1;
+                }
                 addr
             }
 
@@ -137,6 +156,11 @@ impl<'a> CPU<'a> {
             AddressingMode::Absolute_Y => {
                 let base = self.mem_read_u16(self.program_counter);
                 let addr = base.wrapping_add(self.register_y as u16);
+                // +1 if page crossed
+                // 上位１バイトが違っていたらページをまたいだと判定
+                if base & 0xFF00 != addr & 0xFF00 {
+                    self.add_cycles += 1;
+                }
                 addr
             }
             // JMP
@@ -168,6 +192,11 @@ impl<'a> CPU<'a> {
                 // let deref_base = (hi as u16) << 8 | (lo as u16);
                 let deref_base = self.mem_read_u16(base as u16);
                 let deref = deref_base.wrapping_add(self.register_y as u16);
+                // +1 if page crossed
+                // 上位１バイトが違っていたらページをまたいだと判定
+                if deref_base & 0xFF00 != deref & 0xFF00 {
+                    self.add_cycles += 1;
+                }
                 deref
             }
 
@@ -256,13 +285,27 @@ impl<'a> CPU<'a> {
             match op {
                 Some(op) => {
                     // FIXME FOR TEST
-                    if op.mnemonic == "BRK" {
-                        return;
-                    }
+                    // if op.mnemonic == "BRK" {
+                    //     return;
+                    // }
+
+                    self.add_cycles = 0;
                     callback(self);
                     call(self, &op);
 
-                    self.bus.tick(op.cycles);
+                    match op.cycle_calc_mode {
+                        CycleCalcMode::None => {
+                            self.add_cycles = 0;
+                        }
+                        CycleCalcMode::Page => {
+                            if self.add_cycles > 1 {
+                                panic!("Unexpected add_cycles")
+                            }
+                        }
+                        _ => {}
+                    }
+
+                    self.bus.tick(op.cycles + self.add_cycles);
                     // if program_counter_state == self.program_counter {
                     //     self.program_counter += (op.len - 1) as u16
                     // }
@@ -274,7 +317,7 @@ impl<'a> CPU<'a> {
         }
     }
 
-    //割り込み
+    //割り込み処理
     fn interrupt_nmi(&mut self) {
         self._push_u16(self.program_counter);
         let mut status = self.status;
@@ -619,10 +662,20 @@ impl<'a> CPU<'a> {
         let addr = self.get_operand_address(mode);
         if is_flag {
             if self.status & flag != 0 {
+                // +1 if branch succeed, +2 if to a new page
+                self.add_cycles += 1;
+                if self.program_counter & 0xFF00 != addr & 0xFF00 {
+                    self.add_cycles += 2;
+                }
                 self.program_counter = addr
             }
         } else {
             if self.status & flag == 0 {
+                // +1 if branch succeed, +2 if to a new page
+                self.add_cycles += 1;
+                if self.program_counter & 0xFF00 != addr & 0xFF00 {
+                    self.add_cycles += 2;
+                }
                 self.program_counter = addr
             }
         }
@@ -631,8 +684,8 @@ impl<'a> CPU<'a> {
     pub fn brk(&mut self, _mode: &AddressingMode) {
         // プログラム カウンターとプロセッサ ステータスがスタックにプッシュされ、
         //   ==> ??? FIXME
-        // self._push_u16(self.program_counter);
-        // self._push(self.status);
+        self._push_u16(self.program_counter);
+        self._push(self.status);
 
         // $FFFE/F の IRQ 割り込みベクトルが PC にロードされ、ステータスのブレーク フラグが 1 に設定されます。
         self.program_counter = self.mem_read_u16(0xFFFE);
