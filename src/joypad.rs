@@ -1,0 +1,54 @@
+use bitflags::bitflags;
+
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct JoypadButton: u8 {
+        const RIGHT     = 0b1000_0000;
+        const LEFT      = 0b0100_0000;
+        const DOWN      = 0b0010_0000;
+        const UP        = 0b0001_0000;
+        const START     = 0b0000_1000;
+        const SELECT    = 0b0000_0100;
+        const BUTTON_B  = 0b0000_0010;
+        const BUTTON_A  = 0b0000_0001;
+    }
+}
+
+pub struct Joypad {
+    strobe: bool,
+    button_idx: u8,
+    button_status: JoypadButton,
+}
+
+impl Joypad {
+    pub fn new() -> Self {
+        Joypad {
+            strobe: false,
+            button_idx: 0,
+            button_status: JoypadButton::from_bits_truncate(0),
+        }
+    }
+
+    pub fn write(&mut self, data: u8) {
+        self.strobe = data & 1 == 1;
+        if self.strobe {
+            self.button_idx = 0
+        }
+    }
+
+    pub fn read(&mut self) -> u8 {
+        if self.button_idx > 7 {
+            return 1;
+        }
+
+        let response = (self.button_status.bits() & (1 << self.button_idx)) >> self.button_idx;
+        if !self.strobe && self.button_idx <= 7 {
+            self.button_idx += 1;
+        }
+        response
+    }
+
+    pub fn set_button_pressed_status(&mut self, button: JoypadButton, value: bool) {
+        self.button_status.set(button, value)
+    }
+}
