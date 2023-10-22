@@ -1,6 +1,7 @@
 use crate::opscodes::{call, CPU_OPS_CODES};
 
 use crate::bus::{Bus, Mem};
+use crate::ppu::AddrRegister;
 
 #[derive(Debug, Clone, PartialEq)] //deriveは継承。Debugトレイトを継承。
 #[allow(non_camel_case_types)] //allowはリンカに対してnon_camel_case_typeのエラーを出さないようにする
@@ -340,23 +341,63 @@ impl<'a> CPU<'a> {
         return None;
     }
 
-    pub fn shs(&mut self, mode: &AddressingMode) {}
+    pub fn shs(&mut self, mode: &AddressingMode) {
+        self._push(self.register_a & self.register_x);
+        let addr = self.get_operand_address(mode);
+        let hi = ((addr & 0xFF00) >> 8) as u8;
+        self.mem_write(addr, self.register_a & self.register_x & hi);
+        todo!("unofficial")
+    }
 
-    pub fn anc(&mut self, mode: &AddressingMode) {}
+    pub fn anc(&mut self, mode: &AddressingMode) {
+        todo!("unofficial")
+    }
 
-    pub fn arr(&mut self, mode: &AddressingMode) {}
+    pub fn arr(&mut self, mode: &AddressingMode) {
+        todo!("unofficial")
+    }
 
-    pub fn asr(&mut self, mode: &AddressingMode) {}
+    pub fn asr(&mut self, mode: &AddressingMode) {
+        todo!("unofficial")
+    }
 
-    pub fn lxa(&mut self, mode: &AddressingMode) {}
+    pub fn lxa(&mut self, mode: &AddressingMode) {
+        todo!("unofficial")
+    }
 
-    pub fn sha(&mut self, mode: &AddressingMode) {}
+    pub fn sha(&mut self, mode: &AddressingMode) {
+        todo!("unofficial")
+    }
 
-    pub fn sbx(&mut self, mode: &AddressingMode) {}
+    pub fn sbx(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        let (v, overflow) = (self.register_a & self.register_x).overflowing_sub(value);
+        self.register_x = v;
+        self.update_zero_and_negative_flags(self.register_x);
+        self.status = if overflow {
+            self.status & FLAG_OVERFLOW
+        } else {
+            self.status | FLAG_OVERFLOW
+        };
+        todo!("unofficial")
+    }
 
-    pub fn jam(&mut self, mode: &AddressingMode) {}
+    pub fn jam(&mut self, mode: &AddressingMode) {
+        self.program_counter -= 1;
+        panic!("call jam")
+    }
 
-    pub fn lae(&mut self, mode: &AddressingMode) {}
+    pub fn lae(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let value = self.mem_read(addr);
+        let s = self._pop();
+        self.register_a = value & s;
+        self.register_x = self.register_a & s;
+        self._push(self.register_a);
+        self.update_zero_and_negative_flags(self.register_a);
+        todo!("unofficial")
+    }
 
     pub fn rra(&mut self, mode: &AddressingMode) {
         self.ror(mode);
@@ -368,11 +409,22 @@ impl<'a> CPU<'a> {
         self.eor(mode);
     }
 
-    pub fn shx(&mut self, mode: &AddressingMode) {}
+    pub fn shx(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let hi = ((addr & 0xFF00) >> 8) as u8;
+        self.mem_write(addr, (self.register_x & hi).wrapping_add(1));
+    }
 
-    pub fn shy(&mut self, mode: &AddressingMode) {}
+    pub fn shy(&mut self, mode: &AddressingMode) {
+        let addr = self.get_operand_address(mode);
+        let hi = ((addr & 0xFF00) >> 8) as u8;
+        self.mem_write(addr, (self.register_y & hi).wrapping_add(1));
+    }
 
-    pub fn ane(&mut self, mode: &AddressingMode) {}
+    pub fn ane(&mut self, mode: &AddressingMode) {
+        self.txa(mode);
+        self.and(mode);
+    }
 
     pub fn rla(&mut self, mode: &AddressingMode) {
         self.rol(mode);

@@ -79,6 +79,7 @@ impl Mem for Bus<'_> {
                 panic!("Attempt to read from write-only PPU addr {:X}", addr);
             }
             0x2002 => self.ppu.read_status(),
+            0x2004 => self.ppu.read_oam_data(),
             0x2007 => self.ppu.read_data(),
             0x2008..=PPU_REGISTERS_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b00100000_00000111;
@@ -86,10 +87,15 @@ impl Mem for Bus<'_> {
                 self.mem_read(mirror_down_addr)
             }
 
+            0x4016 => {
+                // joypad
+                0
+            }
+
             PRG_ROM..=PRG_ROM_END => self.read_prg_rom(addr),
 
             _ => {
-                println!("Ignoring mem access at {}", addr);
+                println!("Ignoring mem access at {:X}", addr);
                 0
             }
         }
@@ -103,6 +109,11 @@ impl Mem for Bus<'_> {
             }
 
             0x2000 => self.ppu.write_to_ctrl(data),
+            0x2001 => self.ppu.write_to_mask(data),
+            0x2002 => self.ppu.write_to_status(data),
+            0x2003 => self.ppu.write_to_oam_addr(data),
+            0x2004 => self.ppu.write_to_oam_data(data),
+            0x2005 => {}
             0x2006 => self.ppu.write_to_ppu_addr(data),
             0x2007 => self.ppu.write_to_data(data),
             0x2008..=PPU_REGISTERS_MIRRORS_END => {
@@ -110,12 +121,44 @@ impl Mem for Bus<'_> {
                 self.mem_write(mirror_down_addr, data);
             }
 
+            0x4014 => {
+                let mut values: [u8; 256] = [0; 256];
+                for i in 0x00..=0xFF {
+                    values[i] = self.mem_read((data as u16) << 8 | i as u16);
+                }
+                self.ppu.write_to_oam_dma(values);
+            }
+
+            0x4000..=0x4003 => {
+                // TODO APU 1ch
+            }
+
+            0x4004..=0x4007 => {
+                // TODO APU 2ch
+            }
+
+            0x4008 | 0x400A | 0x400B => {
+                // TODO APU 3ch
+            }
+
+            0x400C | 0x400E | 0x400F => {
+                // TODO APU 4ch
+            }
+
+            0x4010..=0x4013 | 0x4015 | 0x4017 => {
+                // TODO DMCch
+            }
+
+            0x4016 => {
+                //joypad
+            }
+
             PRG_ROM..=PRG_ROM_END => {
                 panic!("Attempt tp write to Cartrige ROM space")
             }
 
             _ => {
-                println!("Ignoring mem write-access at {}", addr)
+                println!("Ignoring mem write-access at {:X}", addr)
             }
         }
     }

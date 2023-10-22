@@ -58,7 +58,6 @@ fn main() {
     // let rom = mario_rom();
     let mut frame = Frame::new();
     let bus = Bus::new(rom, move |ppu: &NesPPU| {
-        println!("** GAME LOOP **");
         render::render(ppu, &mut frame);
         texture.update(None, &frame.data, 256 * 3).unwrap();
 
