@@ -2,23 +2,22 @@ use crate::rom::Mirroring;
 use bitflags::bitflags;
 
 pub struct NesPPU {
-    pub chr_rom: Vec<u8>,
-    pub palette_table: [u8; 32],
+    pub chr_rom: Vec<u8>,        //背景やキャラの画像データ
+    pub palette_table: [u8; 32], //色の情報
     pub vram: [u8; 2048],
-    pub oam_addr: u8,
-    pub oam_data: [u8; 256],
-
     pub mirroring: Mirroring,
-
-    addr: AddrRegister,        //0x2006(0x2007)
-    pub ctrl: ControlRegister, //0x2000
-    internal_data_buf: u8,
-    status: StatusRegister, //0x2002
-    mask: MaskRegister,
-
     cycles: usize,
     scanline: usize,
     pub nmi_interrupt: Option<i32>,
+    internal_data_buf: u8,
+
+    pub ctrl: ControlRegister,  //0x2000 割り込みなどPPUの設定 write
+    mask: MaskRegister,         //0x2001 拝啓enableなどのPPUの設定 write
+    status: StatusRegister,     //0x2002 PPUのステータス read
+    pub oam_addr: u8,           //0x2003 書き込むスプライト領域のアドレス write
+    pub oam_data: [u8; 256],    //0x2004 スプライト領域のデータ read/write
+    pub scroll: ScrollRegister, //0x2005 scroll write
+    addr: AddrRegister, //0x2006(0x2007) 書き込むPPUメモリ領域のアドレス、データ (0x2006 write, 0x2007 read/write)
 }
 
 impl NesPPU {
@@ -35,6 +34,7 @@ impl NesPPU {
             ctrl: ControlRegister::new(),
             status: StatusRegister::new(),
             mask: MaskRegister::new(),
+            scroll: ScrollRegister::new(),
             internal_data_buf: 0,
             cycles: 0,
             scanline: 0,
@@ -75,7 +75,8 @@ impl NesPPU {
         }
     }
 
-    pub fn read_status(&self) -> u8 {
+    pub fn read_status(&mut self) -> u8 {
+        self.scroll.reset();
         self.status.bits()
     }
 
@@ -102,6 +103,10 @@ impl NesPPU {
 
     pub fn write_to_oam_dma(&mut self, values: [u8; 256]) {
         self.oam_data = values;
+    }
+
+    pub fn write_to_scroll(&mut self, value: u8) {
+        self.scroll.set(value);
     }
 
     fn increment_vram_addr(&mut self) {
@@ -156,22 +161,26 @@ impl NesPPU {
         self.cycles += cycles as usize;
         //画面一列で341サイクル
         if self.cycles >= 341 {
+            if self.is_sprite_zero_hit(self.cycles) {
+                self.status.set_sprite_zero_hit(true);
+            }
             self.cycles = self.cycles - 341;
             self.scanline += 1;
 
             //0~262lineのうち241~は画面外
             if self.scanline == 241 {
+                self.status.set_vblank_status(true);
+                self.status.set_sprite_zero_hit(false);
                 if self.ctrl.generate_vblank_nmi() {
-                    self.status.set_vblank_status(true);
-                    // todo!("Should trigger NMI interrupt");
+                    // self.status.set_vblank_status(true);
                     self.nmi_interrupt = Some(1);
                 }
             }
 
             if self.scanline >= 262 {
                 self.scanline = 0;
+                self.status.set_sprite_zero_hit(false);
                 self.status.reset_vblank_status();
-                //Fix me
                 self.nmi_interrupt = None;
                 return true;
             }
@@ -181,6 +190,12 @@ impl NesPPU {
             }
         }
         return false;
+    }
+
+    fn is_sprite_zero_hit(&self, cycle: usize) -> bool {
+        let y = self.oam_data[0] as usize;
+        let x = self.oam_data[3] as usize;
+        (y == self.scanline as usize) && x <= cycle && self.mask.show_sprites()
     }
 }
 
@@ -271,7 +286,6 @@ impl ControlRegister {
     }
 
     pub fn update(&mut self, data: u8) {
-        // self.bits = data;?
         *self.0.bits_mut() = data;
     }
 
@@ -281,7 +295,7 @@ impl ControlRegister {
         return last_status;
     }
 
-    pub fn bknd_pattern_addr(&self) -> u16 {
+    pub fn background_pattern_addr(&self) -> u16 {
         if !self.contains(ControlRegister::BACKGROUND_PATTERN_ADDR) {
             0x0000
         } else {
@@ -289,15 +303,27 @@ impl ControlRegister {
         }
     }
 
-    // pub fn is_sprt_8x16_mode(&self) -> bool {
+    // pub fn is_sprite_8x16_mode(&self) -> bool {
     //     self.contains(ControlRegister::SPRITE_SIZE)
     // }
 
-    pub fn sprt_pattern_addr(&self) -> u16 {
+    pub fn sprite_pattern_addr(&self) -> u16 {
         if !self.contains(ControlRegister::SPRITE_PATTERN_ADDR) {
             0x0000
         } else {
             0x1000
+        }
+    }
+
+    pub fn name_table_addr(&self) -> u16 {
+        match (
+            self.contains(ControlRegister::NAMETABLE2),
+            self.contains(ControlRegister::NAMETABLE1),
+        ) {
+            (false, false) => 0x2000,
+            (false, true) => 0x2400,
+            (true, false) => 0x2800,
+            (true, true) => 0x2C00,
         }
     }
 }
@@ -328,8 +354,11 @@ impl StatusRegister {
         self.set_vblank_status(false)
     }
 
+    pub fn set_sprite_zero_hit(&mut self, value: bool) {
+        self.set(StatusRegister::SPRITE_ZERO_HIT, value)
+    }
+
     pub fn update(&mut self, data: u8) {
-        // TODO 要確認
         *self.0.bits_mut() = data;
     }
 }
@@ -352,8 +381,41 @@ impl MaskRegister {
         MaskRegister::from_bits_truncate(0b0000_0000)
     }
 
+    pub fn show_sprites(&self) -> bool {
+        self.contains(MaskRegister::SHOW_SPRITES)
+    }
+
     pub fn update(&mut self, data: u8) {
-        // TODO 要確認
         *self.0.bits_mut() = data;
+    }
+}
+
+pub struct ScrollRegister {
+    pub scroll_x: u8,
+    pub scroll_y: u8,
+    write_x: bool,
+}
+
+impl ScrollRegister {
+    pub fn new() -> Self {
+        ScrollRegister {
+            scroll_x: 0,
+            scroll_y: 0,
+            write_x: false,
+        }
+    }
+
+    fn set(&mut self, data: u8) {
+        if self.write_x {
+            self.scroll_x = data;
+        } else {
+            self.scroll_y = data;
+        }
+        self.write_x = !self.write_x;
+    }
+
+    //一回しかLDAしなかったときのためにリセットをかける
+    pub fn reset(&mut self) {
+        self.write_x = true;
     }
 }
