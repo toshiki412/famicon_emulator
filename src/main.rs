@@ -16,6 +16,7 @@ mod rom;
 use std::collections::HashMap;
 
 use self::cpu::CPU;
+use cartrige::load_rom;
 // use crate::cartrige::test::test_rom;
 // use cartrige::test::mario_rom;
 use cartrige::test::alter_ego_rom;
@@ -67,16 +68,23 @@ fn main() {
     key_map.insert(Keycode::A, joypad::JoypadButton::BUTTON_A);
     key_map.insert(Keycode::S, joypad::JoypadButton::BUTTON_B);
 
-    let rom = alter_ego_rom();
     // let rom = test_rom();
     // let rom = mario_rom();
+    // let rom = alter_ego_rom();
+    // let rom = load_rom("rom/BombSweeper.nes");
+    let rom = load_rom("rom/nestest.nes");
     let mut frame = Frame::new();
-    let bus = Bus::new(rom, move |ppu: &NesPPU, joypad: &mut Joypad| {
+    let bus = Bus::new(rom, move |ppu: &NesPPU, joypad1: &mut Joypad| {
+        // PPUから画面情報を取得し、それをframeに描画。
         render::render(ppu, &mut frame);
+
+        //frameのデータをテクスチャに更新します。このテクスチャはゲーム画面を表現します。
         texture.update(None, &frame.data, 256 * 3).unwrap();
 
+        //テクスチャをウィンドウのキャンバスにコピーします。
         canvas.copy(&texture, None, None).unwrap();
 
+        //ウィンドウ上にゲーム画面を表示します。
         canvas.present();
 
         for event in event_pump.poll_iter() {
@@ -89,13 +97,13 @@ fn main() {
 
                 Event::KeyDown { keycode, .. } => {
                     if let Some(key) = key_map.get(&keycode.unwrap_or(Keycode::Ampersand)) {
-                        joypad.set_button_pressed_status(*key, true);
+                        joypad1.set_button_pressed_status(*key, true);
                     }
                 }
 
                 Event::KeyUp { keycode, .. } => {
                     if let Some(key) = key_map.get(&keycode.unwrap_or(Keycode::Ampersand)) {
-                        joypad.set_button_pressed_status(*key, false);
+                        joypad1.set_button_pressed_status(*key, false);
                     }
                 }
                 _ => { /* do nothing */ }
@@ -103,35 +111,14 @@ fn main() {
         }
     });
 
+    //CPU構造体の新しいインスタンスを作成し、busを渡します。
+    // これにより、CPUがエミュレーションされ、NESのプログラムを実行できます。
     let mut cpu = CPU::new(bus);
     cpu.reset();
     // cpu.run();
     cpu.run_with_callback(move |_| {
         // println!("{}", trace(cpu));
     });
-
-    // put chr_rom
-    // let tile_frame = show_tile(&rom.chr_rom, 1, 0);
-    // texture.update(None, &tile_frame.data, 256 * 3).unwrap();
-    // canvas.copy(&texture, None, None).unwrap();
-    // canvas.present();
-
-    // let mut screen_state = [0 as u8; 32 * 3 * 32];
-    // let mut rng = rand::thread_rng();
-
-    // cpu.run_with_callback(move |cpu| {
-    //     println!("{}", trace(cpu));
-    //     handle_user_input(cpu, &mut event_pump);
-    //     cpu.mem_write(0xfe, rng.gen_range(1..16));
-
-    //     if read_screen_state(cpu, &mut screen_state) {
-    //         texture.update(None, &screen_state, 32 * 3).unwrap();
-    //         canvas.copy(&texture, None, None).unwrap();
-    //         canvas.present();
-    //     }
-
-    //     ::std::thread::sleep(std::time::Duration::new(0, 70_000));
-    // });
 }
 
 fn handle_user_input(cpu: &mut CPU, event_pump: &mut EventPump) {
