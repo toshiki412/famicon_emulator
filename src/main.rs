@@ -2,6 +2,7 @@
 extern crate lazy_static;
 
 //モジュールのインポートはメインに書かなきゃいけない
+mod apu;
 mod bus;
 mod cartrige;
 mod cpu;
@@ -16,6 +17,7 @@ mod rom;
 use std::collections::HashMap;
 
 use self::cpu::CPU;
+use apu::NesAPU;
 use cartrige::load_rom;
 // use crate::cartrige::test::test_rom;
 // use cartrige::test::mario_rom;
@@ -72,9 +74,10 @@ fn main() {
     // let rom = mario_rom();
     // let rom = alter_ego_rom();
     // let rom = load_rom("rom/BombSweeper.nes");
-    let rom = load_rom("rom/nestest.nes");
+    let rom = load_rom("rom/BombSweeper.nes");
     let mut frame = Frame::new();
-    let bus = Bus::new(rom, move |ppu: &NesPPU, joypad1: &mut Joypad| {
+    let apu = NesAPU::new(&sdl_context);
+    let bus = Bus::new(rom, apu, move |ppu: &NesPPU, joypad1: &mut Joypad| {
         // PPUから画面情報を取得し、それをframeに描画。
         render::render(ppu, &mut frame);
 
