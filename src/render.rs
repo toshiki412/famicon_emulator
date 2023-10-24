@@ -167,7 +167,10 @@ fn render_name_table(
             let mut upper = tile[y];
             let mut lower = tile[y + 8];
             for x in (0..=7).rev() {
+                //lowerを上位ビット、upperを下位ビット
+                //valueは00,01,10,11のどれか
                 let value = (1 & lower) << 1 | (1 & upper);
+
                 upper = upper >> 1;
                 lower = lower >> 1;
                 let rgb = match value {
