@@ -4,12 +4,18 @@ use std::time::Duration;
 
 pub struct NesAPU {
     ch1_register: Ch1Register,
+    ch2_register: Ch2Register,
+    ch3_register: Ch3Register,
     ch4_register: Ch4Register,
 
     ch1_device: AudioDevice<SquareWave>,
+    ch2_device: AudioDevice<SquareWave>,
+    ch3_device: AudioDevice<TriangleWave>,
     ch4_device: AudioDevice<NoiseWave>,
 
     ch1_sender: Sender<SquareNote>,
+    ch2_sender: Sender<SquareNote>,
+    ch3_sender: Sender<TriangleNote>,
     ch4_sender: Sender<NoiseNote>,
 }
 
@@ -18,15 +24,23 @@ const NES_CPU_CLOCK: f32 = 1_789_772.; //1.78MHz
 impl NesAPU {
     pub fn new(sdl_context: &sdl2::Sdl) -> Self {
         let (ch1_device, ch1_sender) = init_square(&sdl_context);
+        let (ch2_device, ch2_sender) = init_square(&sdl_context);
+        let (ch3_device, ch3_sender) = init_triangle(&sdl_context);
         let (ch4_device, ch4_sender) = init_noise(&sdl_context);
         NesAPU {
             ch1_register: Ch1Register::new(),
+            ch2_register: Ch2Register::new(),
+            ch3_register: Ch3Register::new(),
             ch4_register: Ch4Register::new(),
 
             ch1_device: ch1_device,
+            ch2_device: ch2_device,
+            ch3_device: ch3_device,
             ch4_device: ch4_device,
 
             ch1_sender: ch1_sender,
+            ch2_sender: ch2_sender,
+            ch3_sender: ch3_sender,
             ch4_sender: ch4_sender,
         }
     }
@@ -53,6 +67,38 @@ impl NesAPU {
                 duty: duty,
             })
             .unwrap();
+    }
+
+    pub fn write_2ch(&mut self, addr: u16, value: u8) {
+        self.ch2_register.write(addr, value);
+
+        let duty = match self.ch2_register.duty {
+            0b00 => 0.125,
+            0b01 => 0.25,
+            0b10 => 0.5,
+            0b11 => 0.75,
+            _ => panic!("cant be"),
+        };
+
+        let volume = (self.ch2_register.volume as f32) / 15.0;
+
+        let hz = NES_CPU_CLOCK / (16.0 * (self.ch2_register.frequency as f32 + 1.0));
+        //sdlに送る
+        self.ch2_sender
+            .send(SquareNote {
+                hz: hz,
+                volume: volume,
+                duty: duty,
+            })
+            .unwrap();
+    }
+
+    pub fn write_3ch(&mut self, addr: u16, value: u8) {
+        self.ch3_register.write(addr, value);
+
+        let hz = NES_CPU_CLOCK / (16.0 * (self.ch2_register.frequency as f32 + 1.0));
+        //sdlに送る
+        self.ch3_sender.send(TriangleNote { hz: hz }).unwrap();
     }
 
     pub fn write4ch(&mut self, addr: u16, value: u8) {
@@ -120,71 +166,6 @@ impl Ch1Register {
     }
 }
 
-enum NoiseKind {
-    Long,
-    Short,
-}
-
-struct Ch4Register {
-    //400C
-    volume: u8,
-    envelope_flag: bool,
-    key_off_counter: bool,
-
-    //400E
-    noise_hz: u8,
-    kind: NoiseKind,
-
-    //400F
-    key_off_count: u8,
-}
-
-impl Ch4Register {
-    pub fn new() -> Self {
-        Ch4Register {
-            volume: 0,
-            envelope_flag: false,
-            key_off_counter: false,
-            noise_hz: 0,
-            kind: NoiseKind::Long,
-            key_off_count: 0,
-        }
-    }
-
-    pub fn write(&mut self, addr: u16, value: u8) {
-        match addr {
-            0x400C => {
-                // 下位4ビット
-                self.volume = value & 0x0F;
-
-                // 上位1ビット
-                self.envelope_flag = (value & 0x10) == 0;
-
-                // 上位2ビット
-                self.key_off_counter = (value & 0x20) == 0;
-            }
-            0x400E => {
-                self.noise_hz = value & 0x0F;
-                self.kind = match value & 0x80 {
-                    0 => NoiseKind::Long,
-                    _ => NoiseKind::Short,
-                };
-            }
-            0x400F => {
-                self.key_off_count = (value & 0xF8) >> 3;
-            }
-            _ => panic!("cant be"),
-        }
-    }
-}
-
-lazy_static! {
-    pub static ref NOISE_TABLE: Vec<u16> = vec![
-        0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0030, 0x0040, 0x0050, 0x0065, 0x007f, 0x00be,
-        0x00fe, 0x017d, 0x01fc, 0x03f9, 0x07f2,
-    ];
-}
-
 #[derive(Debug, Clone, PartialEq)]
 struct SquareNote {
     hz: f32,
@@ -247,6 +228,232 @@ fn init_square(sdl_context: &sdl2::Sdl) -> (AudioDevice<SquareWave>, Sender<Squa
 
     device.resume();
     (device, sender)
+}
+
+struct Ch2Register {
+    //4004
+    volume: u8,
+    envelope_flag: bool,
+    key_off_counter: bool,
+    duty: u8,
+
+    //4005
+    sweep_change_amount: u8,
+    sweep_change_direction: u8,
+    sweep_timer_count: u8,
+    sweep_enable_flag: u8,
+
+    //4006,4007
+    frequency: u16,
+
+    //4007
+    key_off_count: u8,
+}
+
+impl Ch2Register {
+    pub fn new() -> Self {
+        Ch2Register {
+            volume: 0,
+            envelope_flag: false,
+            key_off_counter: false,
+            duty: 0,
+            sweep_change_amount: 0,
+            sweep_change_direction: 0,
+            sweep_timer_count: 0,
+            sweep_enable_flag: 0,
+            frequency: 0,
+            key_off_count: 0,
+        }
+    }
+
+    pub fn write(&mut self, addr: u16, value: u8) {
+        match addr {
+            0x4004 => {
+                self.volume = value & 0x0F;
+                self.envelope_flag = (value & 0x10) == 0;
+                self.key_off_counter = (value & 0x20) == 0;
+                self.duty = (value & 0xC0) >> 6;
+            }
+            0x4005 => {
+                self.sweep_change_amount = value & 0x07;
+                self.sweep_change_direction = (value & 0x08) >> 3;
+                self.sweep_enable_flag = (value & 0x70) >> 4;
+                self.sweep_timer_count = (value & 0x80) >> 7;
+            }
+            0x4006 => {
+                self.frequency = (self.frequency & 0x0700) | value as u16;
+            }
+            0x4007 => {
+                self.frequency = (self.frequency & 0x00FF) | (value as u16 & 0x07) >> 8;
+                self.key_off_count = (value & 0xF8) >> 3;
+            }
+            _ => panic!("cant be"),
+        }
+    }
+}
+
+struct Ch3Register {
+    //4008
+    length: u8,
+    key_off_counter_flag: bool,
+
+    //400A,400B
+    frequency: u16,
+
+    //400B
+    key_off_count: u8,
+}
+
+impl Ch3Register {
+    pub fn new() -> Self {
+        Ch3Register {
+            length: 0,
+            key_off_counter_flag: false,
+            frequency: 0,
+            key_off_count: 0,
+        }
+    }
+
+    pub fn write(&mut self, addr: u16, value: u8) {
+        match addr {
+            0x4008 => {
+                self.length = value & 0x7F;
+                self.key_off_counter_flag = (value & 0x80) == 0;
+            }
+            0x4009 => {}
+            0x400A => {
+                self.frequency = (self.frequency & 0x0700) | value as u16;
+            }
+            0x400B => {
+                self.frequency = (self.frequency & 0x00FF) | (value as u16 & 0x07) >> 8;
+                self.key_off_count = (value & 0xF8) >> 3;
+            }
+            _ => panic!("cant be"),
+        }
+    }
+}
+
+pub struct TriangleNote {
+    hz: f32,
+}
+struct TriangleWave {
+    freq: f32,
+    phase: f32,
+    receiver: Receiver<TriangleNote>,
+    note: TriangleNote,
+}
+
+impl AudioCallback for TriangleWave {
+    type Channel = f32;
+
+    // outは外からもらってくるオーディオのバッファ.ここに波を入れる
+    fn callback(&mut self, out: &mut [Self::Channel]) {
+        //三角波の生成
+        for x in out.iter_mut() {
+            let res = self.receiver.recv_timeout(Duration::from_millis(0));
+            match res {
+                Ok(note) => self.note = note,
+                Err(_) => {}
+            }
+
+            *x = (if self.phase <= 0.5 {
+                self.phase
+            } else {
+                1.0 - self.phase
+            } - 0.5)
+                * 2.0;
+            self.phase = (self.phase + self.note.hz / self.freq) % 1.0;
+        }
+    }
+}
+
+fn init_triangle(sdl_context: &sdl2::Sdl) -> (AudioDevice<TriangleWave>, Sender<TriangleNote>) {
+    let audio_subsystem = sdl_context.audio().unwrap();
+
+    let (sender, receiver) = channel::<TriangleNote>();
+
+    let desire_spec = AudioSpecDesired {
+        freq: Some(44100), //1秒間に44100個の配列が消費される
+        channels: Some(1),
+        samples: None,
+    };
+
+    let device = audio_subsystem
+        .open_playback(None, &desire_spec, |spec| TriangleWave {
+            freq: spec.freq as f32,
+            phase: 0.0,
+            receiver: receiver,
+            note: TriangleNote { hz: 0.0 },
+        })
+        .unwrap();
+
+    device.resume();
+    (device, sender)
+}
+
+enum NoiseKind {
+    Long,
+    Short,
+}
+
+lazy_static! {
+    pub static ref NOISE_TABLE: Vec<u16> = vec![
+        0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0030, 0x0040, 0x0050, 0x0065, 0x007f, 0x00be,
+        0x00fe, 0x017d, 0x01fc, 0x03f9, 0x07f2,
+    ];
+}
+
+struct Ch4Register {
+    //400C
+    volume: u8,
+    envelope_flag: bool,
+    key_off_counter: bool,
+
+    //400E
+    noise_hz: u8,
+    kind: NoiseKind,
+
+    //400F
+    key_off_count: u8,
+}
+
+impl Ch4Register {
+    pub fn new() -> Self {
+        Ch4Register {
+            volume: 0,
+            envelope_flag: false,
+            key_off_counter: false,
+            noise_hz: 0,
+            kind: NoiseKind::Long,
+            key_off_count: 0,
+        }
+    }
+
+    pub fn write(&mut self, addr: u16, value: u8) {
+        match addr {
+            0x400C => {
+                // 下位4ビット
+                self.volume = value & 0x0F;
+
+                // 上位1ビット
+                self.envelope_flag = (value & 0x10) == 0;
+
+                // 上位2ビット
+                self.key_off_counter = (value & 0x20) == 0;
+            }
+            0x400E => {
+                self.noise_hz = value & 0x0F;
+                self.kind = match value & 0x80 {
+                    0 => NoiseKind::Long,
+                    _ => NoiseKind::Short,
+                };
+            }
+            0x400F => {
+                self.key_off_count = (value & 0xF8) >> 3;
+            }
+            _ => panic!("cant be"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
