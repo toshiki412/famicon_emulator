@@ -82,17 +82,17 @@ fn main() {
     mute(sender.clone(), 30);
     play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 200);
     mute(sender.clone(), 30);
-    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 100);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 200);
     mute(sender.clone(), 30);
     play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 800);
     mute(sender.clone(), 30);
 
     // 夢を
-    play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 300);
+    play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 400);
     mute(sender.clone(), 30);
     play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 200);
     mute(sender.clone(), 30);
-    play_sound(sender.clone(), fa5, 0.1, 0.5, 800);
+    play_sound(sender.clone(), fa5, 0.1, 0.5, 1000);
     mute(sender.clone(), 200);
 
     //かき集め //
@@ -100,8 +100,8 @@ fn main() {
     play_sound(sender.clone(), fa5, 0.1, 0.5, 200);
     play_sound(sender.clone(), la5_fra, 0.1, 0.5, 300);
     play_sound(sender.clone(), so5, 0.1, 0.5, 400);
-    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 1500);
-    mute(sender.clone(), 300);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 1800);
+    mute(sender.clone(), 500);
 
     // 探し物を
     play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 100);
@@ -110,13 +110,13 @@ fn main() {
     mute(sender.clone(), 30);
     play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 200);
     mute(sender.clone(), 30);
-    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 100);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 200);
     mute(sender.clone(), 30);
     play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 800);
     mute(sender.clone(), 30);
 
     // 探し
-    play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 300);
+    play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 400);
     mute(sender.clone(), 30);
     play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 200);
     mute(sender.clone(), 30);
@@ -130,7 +130,7 @@ fn main() {
     play_sound(sender.clone(), fa5, 0.1, 0.5, 200);
     play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 200);
     play_sound(sender.clone(), fa5, 0.1, 0.5, 200);
-    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 1200);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 1500);
     mute(sender.clone(), 600);
 
     // ポケットのコイン
@@ -138,9 +138,9 @@ fn main() {
     mute(sender.clone(), 30);
     play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 400);
     mute(sender.clone(), 30);
-    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 500);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 600);
     mute(sender.clone(), 30);
-    play_sound(sender.clone(), la4_fra, 0.1, 0.5, 500);
+    play_sound(sender.clone(), la4_fra, 0.1, 0.5, 600);
     play_sound(sender.clone(), so5, 0.1, 0.5, 200);
     play_sound(sender.clone(), fa5, 0.1, 0.5, 800);
     mute(sender.clone(), 100);
@@ -166,14 +166,14 @@ fn main() {
     play_sound(sender.clone(), la4_fra, 0.1, 0.5, 600);
     mute(sender.clone(), 30);
     play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 800);
-    mute(sender.clone(), 200);
+    mute(sender.clone(), 300);
     play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 600);
     mute(sender.clone(), 30);
     play_sound(sender.clone(), fa5, 0.1, 0.5, 600);
     mute(sender.clone(), 70);
     play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 200);
     play_sound(sender.clone(), fa5, 0.1, 0.5, 200);
-    play_sound(sender.clone(), so5_fra, 0.1, 0.5, 1700);
+    play_sound(sender.clone(), so5_fra, 0.1, 0.5, 2100);
     mute(sender.clone(), 500);
 
     // ウィーアー
