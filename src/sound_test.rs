@@ -1,9 +1,9 @@
 use sdl2::audio::{AudioCallback, AudioSpecDesired};
-use std::sync::mpsc::{channel, Receiver};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Duration;
 
 #[derive(Debug, Clone, PartialEq)]
-struct SquareNote {
+pub struct SquareNote {
     hz: f32,
     volume: f32,
     duty: f32, //波の上と下の比率
@@ -38,6 +38,16 @@ impl AudioCallback for SquareWave {
     }
 }
 
+const la4_fra: f32 = 415.305;
+const shi4_fra: f32 = 466.164;
+const do5: f32 = 523.251;
+const re5: f32 = 587.330;
+const mi5_fra: f32 = 622.254;
+const fa5: f32 = 698.456;
+const so5: f32 = 783.991;
+const so5_fra: f32 = 739.989;
+const la5_fra: f32 = 830.609;
+
 fn main() {
     let sdl_context = sdl2::init().unwrap();
     let audio_subsystem = sdl_context.audio().unwrap();
@@ -56,34 +66,143 @@ fn main() {
             phase: 0.0,
             receiver: receiver,
             note: SquareNote {
-                hz: 261.626,
-                volume: 0.1,
-                duty: 0.125,
+                hz: 0.0,
+                volume: 0.0,
+                duty: 0.0,
             },
         })
         .unwrap();
 
     device.resume();
 
-    std::thread::sleep(Duration::from_millis(1000));
+    // ありったけの
+    play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 100);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 300);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 200);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 100);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 800);
+    mute(sender.clone(), 30);
 
+    // 夢を
+    play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 300);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 200);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), fa5, 0.1, 0.5, 800);
+    mute(sender.clone(), 200);
+
+    //かき集め //
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 200);
+    play_sound(sender.clone(), fa5, 0.1, 0.5, 200);
+    play_sound(sender.clone(), la5_fra, 0.1, 0.5, 300);
+    play_sound(sender.clone(), so5, 0.1, 0.5, 400);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 1500);
+    mute(sender.clone(), 300);
+
+    // 探し物を
+    play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 100);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 300);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 200);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 100);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 800);
+    mute(sender.clone(), 30);
+
+    // 探し
+    play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 300);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 200);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), fa5, 0.1, 0.5, 500);
+    mute(sender.clone(), 30);
+
+    //に行くのさ
+    play_sound(sender.clone(), fa5, 0.1, 0.5, 400);
+    play_sound(sender.clone(), la5_fra, 0.1, 0.5, 400);
+    play_sound(sender.clone(), so5, 0.1, 0.5, 400);
+    play_sound(sender.clone(), fa5, 0.1, 0.5, 200);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 200);
+    play_sound(sender.clone(), fa5, 0.1, 0.5, 200);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 1200);
+    mute(sender.clone(), 600);
+
+    // ポケットのコイン
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 200);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 400);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 500);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), la4_fra, 0.1, 0.5, 500);
+    play_sound(sender.clone(), so5, 0.1, 0.5, 200);
+    play_sound(sender.clone(), fa5, 0.1, 0.5, 800);
+    mute(sender.clone(), 100);
+
+    // それとyou wanna be my friend
+    play_sound(sender.clone(), re5, 0.1, 0.5, 200);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), re5, 0.1, 0.5, 200);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), re5, 0.1, 0.5, 200);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), re5, 0.1, 0.5, 200);
+    mute(sender.clone(), 20);
+    play_sound(sender.clone(), re5, 0.1, 0.5, 200);
+    mute(sender.clone(), 20);
+    play_sound(sender.clone(), re5, 0.1, 0.5, 200);
+    play_sound(sender.clone(), do5, 0.1, 0.5, 400);
+    play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 400);
+    play_sound(sender.clone(), do5, 0.1, 0.5, 1500);
+    mute(sender.clone(), 300);
+
+    //ウィーアー、ウィーアー、オンザクルーズ
+    play_sound(sender.clone(), la4_fra, 0.1, 0.5, 600);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 800);
+    mute(sender.clone(), 200);
+    play_sound(sender.clone(), shi4_fra, 0.1, 0.5, 600);
+    mute(sender.clone(), 30);
+    play_sound(sender.clone(), fa5, 0.1, 0.5, 600);
+    mute(sender.clone(), 70);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 200);
+    play_sound(sender.clone(), fa5, 0.1, 0.5, 200);
+    play_sound(sender.clone(), so5_fra, 0.1, 0.5, 1700);
+    mute(sender.clone(), 500);
+
+    // ウィーアー
+    play_sound(sender.clone(), fa5, 0.1, 0.5, 200);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 200);
+    play_sound(sender.clone(), fa5, 0.1, 0.5, 200);
+    play_sound(sender.clone(), mi5_fra, 0.1, 0.5, 400);
+}
+
+pub fn play_sound(sender: Sender<SquareNote>, hz: f32, volume: f32, duty: f32, msec: u64) {
     sender
         .send(SquareNote {
-            hz: 293.665,
-            volume: 0.1,
-            duty: 0.125,
+            hz: hz,
+            volume: volume,
+            duty: duty,
         })
         .unwrap();
 
-    std::thread::sleep(Duration::from_millis(1000));
+    std::thread::sleep(Duration::from_millis(msec));
+}
 
+pub fn mute(sender: Sender<SquareNote>, msec: u64) {
     sender
         .send(SquareNote {
-            hz: 329.628,
-            volume: 0.1,
-            duty: 0.125,
+            hz: 0.0,
+            volume: 0.0,
+            duty: 0.0,
         })
         .unwrap();
 
-    std::thread::sleep(Duration::from_millis(1000));
+    std::thread::sleep(Duration::from_millis(msec));
 }
