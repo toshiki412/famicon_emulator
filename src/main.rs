@@ -72,9 +72,8 @@ fn main() {
 
     // let rom = test_rom();
     // let rom = mario_rom();
-    // let rom = alter_ego_rom();
+    let rom = alter_ego_rom();
     // let rom = load_rom("rom/BombSweeper.nes");
-    let rom = load_rom("rom/BombSweeper.nes");
     let mut frame = Frame::new();
     let apu = NesAPU::new(&sdl_context);
     let bus = Bus::new(rom, apu, move |ppu: &NesPPU, joypad1: &mut Joypad| {

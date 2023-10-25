@@ -4,20 +4,30 @@ use std::time::Duration;
 
 pub struct NesAPU {
     ch1_register: Ch1Register,
+    ch4_register: Ch4Register,
 
     ch1_device: AudioDevice<SquareWave>,
+    ch4_device: AudioDevice<NoiseWave>,
+
     ch1_sender: Sender<SquareNote>,
+    ch4_sender: Sender<NoiseNote>,
 }
 
-const NES_CPU_CLOCK: f32 = 1_789_773.0; //1.78MHz
+const NES_CPU_CLOCK: f32 = 1_789_772.; //1.78MHz
 
 impl NesAPU {
     pub fn new(sdl_context: &sdl2::Sdl) -> Self {
         let (ch1_device, ch1_sender) = init_square(&sdl_context);
+        let (ch4_device, ch4_sender) = init_noise(&sdl_context);
         NesAPU {
             ch1_register: Ch1Register::new(),
+            ch4_register: Ch4Register::new(),
+
             ch1_device: ch1_device,
+            ch4_device: ch4_device,
+
             ch1_sender: ch1_sender,
+            ch4_sender: ch4_sender,
         }
     }
 
@@ -41,6 +51,28 @@ impl NesAPU {
                 hz: hz,
                 volume: volume,
                 duty: duty,
+            })
+            .unwrap();
+    }
+
+    pub fn write4ch(&mut self, addr: u16, value: u8) {
+        self.ch4_register.write(addr, value);
+
+        let is_long = match self.ch4_register.kind {
+            NoiseKind::Long => true,
+            _ => false,
+        };
+
+        let volume = (self.ch4_register.volume as f32) / 15.0;
+
+        let hz = NES_CPU_CLOCK / NOISE_TABLE[self.ch4_register.noise_hz as usize] as f32;
+
+        //sdlに送る
+        self.ch4_sender
+            .send(NoiseNote {
+                hz: hz,
+                volume: volume,
+                is_long: is_long,
             })
             .unwrap();
     }
@@ -86,6 +118,71 @@ impl Ch1Register {
             _ => panic!("cant be"),
         }
     }
+}
+
+enum NoiseKind {
+    Long,
+    Short,
+}
+
+struct Ch4Register {
+    //400C
+    volume: u8,
+    envelope_flag: bool,
+    key_off_counter: bool,
+
+    //400E
+    noise_hz: u8,
+    kind: NoiseKind,
+
+    //400F
+    key_off_count: u8,
+}
+
+impl Ch4Register {
+    pub fn new() -> Self {
+        Ch4Register {
+            volume: 0,
+            envelope_flag: false,
+            key_off_counter: false,
+            noise_hz: 0,
+            kind: NoiseKind::Long,
+            key_off_count: 0,
+        }
+    }
+
+    pub fn write(&mut self, addr: u16, value: u8) {
+        match addr {
+            0x400C => {
+                // 下位4ビット
+                self.volume = value & 0x0F;
+
+                // 上位1ビット
+                self.envelope_flag = (value & 0x10) == 0;
+
+                // 上位2ビット
+                self.key_off_counter = (value & 0x20) == 0;
+            }
+            0x400E => {
+                self.noise_hz = value & 0x0F;
+                self.kind = match value & 0x80 {
+                    0 => NoiseKind::Long,
+                    _ => NoiseKind::Short,
+                };
+            }
+            0x400F => {
+                self.key_off_count = (value & 0xF8) >> 3;
+            }
+            _ => panic!("cant be"),
+        }
+    }
+}
+
+lazy_static! {
+    pub static ref NOISE_TABLE: Vec<u16> = vec![
+        0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0030, 0x0040, 0x0050, 0x0065, 0x007f, 0x00be,
+        0x00fe, 0x017d, 0x01fc, 0x03f9, 0x07f2,
+    ];
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -144,6 +241,107 @@ fn init_square(sdl_context: &sdl2::Sdl) -> (AudioDevice<SquareWave>, Sender<Squa
                 hz: 0.0,
                 volume: 0.0,
                 duty: 0.0,
+            },
+        })
+        .unwrap();
+
+    device.resume();
+    (device, sender)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct NoiseNote {
+    hz: f32,
+    is_long: bool,
+    volume: f32,
+}
+struct NoiseWave {
+    freq: f32,
+    phase: f32,
+    receiver: Receiver<NoiseNote>,
+    is_sound: bool,
+    long_random: NoiseRandom,
+    short_random: NoiseRandom,
+
+    note: NoiseNote,
+}
+
+impl AudioCallback for NoiseWave {
+    type Channel = f32;
+
+    // outは外からもらってくるオーディオのバッファ.ここに波を入れる
+    fn callback(&mut self, out: &mut [Self::Channel]) {
+        //ノイズの生成
+        for x in out.iter_mut() {
+            let res = self.receiver.recv_timeout(Duration::from_millis(0));
+            match res {
+                Ok(note) => self.note = note,
+                Err(_) => {}
+            }
+
+            *x = if self.is_sound { 0.0 } else { 1.0 } * self.note.volume;
+            let last_phase = self.phase;
+            self.phase = (self.phase + self.note.hz / self.freq) % 1.0;
+            if last_phase > self.phase {
+                self.is_sound = if self.note.is_long {
+                    self.long_random.next()
+                } else {
+                    self.short_random.next()
+                };
+            }
+        }
+    }
+}
+
+// ノイズ
+struct NoiseRandom {
+    bit: u8,
+    value: u16,
+}
+
+impl NoiseRandom {
+    pub fn new_long() -> Self {
+        NoiseRandom { bit: 1, value: 1 }
+    }
+
+    pub fn new_short() -> Self {
+        NoiseRandom { bit: 6, value: 1 }
+    }
+
+    pub fn next(&mut self) -> bool {
+        //ロングモード時はビット0とビット1のXORを入れる
+        let b = (self.value & 0x01) ^ ((self.value >> self.bit) & 0x01);
+        self.value = self.value >> 1;
+        self.value = self.value & 0b011_1111_1111_1111 | b << 14;
+
+        //シフトレジスタのビット0が1なら出力は0
+        self.value & 0x01 != 0
+    }
+}
+
+fn init_noise(sdl_context: &sdl2::Sdl) -> (AudioDevice<NoiseWave>, Sender<NoiseNote>) {
+    let audio_subsystem = sdl_context.audio().unwrap();
+
+    let (sender, receiver) = channel::<NoiseNote>();
+
+    let desire_spec = AudioSpecDesired {
+        freq: Some(44100), //1秒間に44100個の配列が消費される
+        channels: Some(1),
+        samples: None,
+    };
+
+    let device = audio_subsystem
+        .open_playback(None, &desire_spec, |spec| NoiseWave {
+            freq: spec.freq as f32,
+            phase: 0.0,
+            receiver: receiver,
+            is_sound: false,
+            long_random: NoiseRandom::new_long(),
+            short_random: NoiseRandom::new_short(),
+            note: NoiseNote {
+                hz: 0.0,
+                volume: 0.0,
+                is_long: true,
             },
         })
         .unwrap();

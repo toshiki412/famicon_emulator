@@ -150,6 +150,7 @@ impl Mem for Bus<'_> {
 
             0x400C | 0x400E | 0x400F => {
                 // TODO APU 4ch
+                self.apu.write4ch(addr, data)
             }
 
             0x4010..=0x4013 | 0x4015 => {
