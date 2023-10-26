@@ -579,19 +579,14 @@ impl<'a> CPU<'a> {
     }
 
     pub fn _push_u16(&mut self, value: u16) {
-        //mem_write_u16するためにaddrを一回0x01FEまで下げて、そこから2byte分(FE,FF)を書き込ませる
-        let addr = 0x0100 + self.stack_pointer.wrapping_sub(1) as u16;
-        self.mem_write_u16(addr, value);
-        self.stack_pointer = self.stack_pointer.wrapping_sub(2);
+        self._push((value >> 8) as u8);
+        self._push((value & 0x00FF) as u8);
     }
 
     pub fn _pop_u16(&mut self) -> u16 {
-        //stack pointerは空を指しているはずなので1つ足したところを指してあげる
-        //例えばFF,FEに値が入っていたらSPはFDを指している。FE,FFを読むためにaddrをFD+1=FEを指すようにする
-        let addr = 0x0100 + self.stack_pointer.wrapping_add(1) as u16;
-        let value = self.mem_read_u16(addr);
-        self.stack_pointer = self.stack_pointer.wrapping_add(2);
-        value
+        let lo = self._pop();
+        let hi = self._pop();
+        ((hi as u16) << 8) | lo as u16
     }
 
     pub fn jmp(&mut self, mode: &AddressingMode) {
@@ -712,7 +707,7 @@ impl<'a> CPU<'a> {
                 // +1 if branch succeed, +2 if to a new page
                 self.add_cycles += 1;
                 if self.program_counter & 0xFF00 != addr & 0xFF00 {
-                    self.add_cycles += 2;
+                    self.add_cycles += 1;
                 }
                 self.program_counter = addr
             }
@@ -721,7 +716,7 @@ impl<'a> CPU<'a> {
                 // +1 if branch succeed, +2 if to a new page
                 self.add_cycles += 1;
                 if self.program_counter & 0xFF00 != addr & 0xFF00 {
-                    self.add_cycles += 2;
+                    self.add_cycles += 1;
                 }
                 self.program_counter = addr
             }
