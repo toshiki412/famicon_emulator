@@ -2,14 +2,24 @@ use crate::rom::Mirroring;
 use bitflags::bitflags;
 
 pub struct NesPPU {
-    pub chr_rom: Vec<u8>,        //背景やキャラの画像データ
+    pub chr_rom: Vec<u8>, //背景やキャラの画像データ
+    pub is_chr_rom: bool,
     pub palette_table: [u8; 32], //色の情報
     pub vram: [u8; 2048],
-    pub mirroring: Mirroring,
+
     cycles: usize,
     scanline: usize,
     pub nmi_interrupt: Option<i32>,
+    pub clear_nmi_interrupt: bool,
+
+    pub mirroring: Mirroring,
     internal_data_buf: u8,
+
+    //描画中にパレットテーブルを書き換えることができるのでその対応
+    //書き込まれた時点でのscanlineとその時のパレットのスナップショットを持っておき
+    //レンダリング時にその履歴を参照して描画することで可能
+    pub scanline_palette_indexes: Vec<usize>,
+    pub scanline_palette_tables: Vec<[u8; 32]>,
 
     pub ctrl: ControlRegister,  //0x2000 割り込みなどPPUの設定 write
     mask: MaskRegister,         //0x2001 拝啓enableなどのPPUの設定 write
@@ -22,9 +32,10 @@ pub struct NesPPU {
 
 impl NesPPU {
     // chr_romがカートリッジ(ゲーム)から直接接続されてくるrom
-    pub fn new(chr_rom: Vec<u8>, mirroring: Mirroring) -> Self {
+    pub fn new(chr_rom: Vec<u8>, mirroring: Mirroring, is_chr_rom: bool) -> Self {
         NesPPU {
             chr_rom: chr_rom,
+            is_chr_rom: is_chr_rom,
             palette_table: [0; 32],
             vram: [0; 2048],
             oam_addr: 0,
@@ -39,6 +50,9 @@ impl NesPPU {
             cycles: 0,
             scanline: 0,
             nmi_interrupt: None,
+            clear_nmi_interrupt: false,
+            scanline_palette_indexes: vec![],
+            scanline_palette_tables: vec![],
         }
     }
 
@@ -52,17 +66,72 @@ impl NesPPU {
         match addr {
             0..=0x1FFF => {
                 // FIXME
+                if self.is_chr_rom {
+                    self.chr_rom[addr as usize] = value;
+                }
             }
             0x2000..=0x2FFF => {
                 self.vram[self.mirror_vram_addr(addr) as usize] = value;
             }
             0x3000..=0x3EFF => {
                 // FIXME
+                self.vram[self.mirror_vram_addr(addr) as usize] = value;
             }
-            0x3F00..=0x3FFF => {
-                self.palette_table[(addr - 0x3F00) as usize] = value;
-            }
+            0x3F00..=0x3F1F => self.write_palette_table(addr, value),
+            0x3F20..=0x3FFF => self.write_palette_table(addr, value),
             _ => panic!("unexpected access to mirrored space {}", addr),
+        }
+    }
+
+    fn write_palette_table(&mut self, addr: u16, value: u8) {
+        let addr = self.mirror_palette_addr(addr) as usize;
+
+        //palette_tableには最新情報を入れておく
+        self.palette_table[addr] = value;
+
+        let scanline = self.scanline;
+        let last_scanline = self.scanline_palette_indexes.last().unwrap_or(&0);
+
+        if *last_scanline != scanline {
+            self.scanline_palette_indexes.push(scanline);
+            self.scanline_palette_tables
+                .push(self.palette_table.clone());
+        } else {
+            self.scanline_palette_tables.pop();
+            self.scanline_palette_tables
+                .push(self.palette_table.clone());
+        }
+    }
+
+    fn clear_palette_table_histories(&mut self) {
+        self.scanline_palette_indexes = vec![];
+        self.scanline_palette_tables = vec![];
+    }
+
+    pub fn read_palette_table(&self, scanline: usize) -> &[u8; 32] {
+        if self.scanline_palette_indexes.is_empty() {
+            return &self.palette_table;
+        }
+
+        let mut index = 0;
+        for (i, s) in self.scanline_palette_indexes.iter().enumerate() {
+            if *s > scanline {
+                break;
+            }
+            index = i
+        }
+        let table = &self.scanline_palette_tables[index];
+        table
+    }
+
+    fn mirror_palette_addr(&self, addr: u16) -> u16 {
+        let addr = addr & 0x1F;
+        match addr {
+            0x10 => 0x00,
+            0x14 => 0x04,
+            0x18 => 0x08,
+            0x1C => 0x0C,
+            _ => addr,
         }
     }
 
@@ -77,7 +146,10 @@ impl NesPPU {
 
     pub fn read_status(&mut self) -> u8 {
         self.scroll.reset();
-        self.status.bits()
+        let bits = self.status.bits();
+        self.status.reset_vblank_status();
+        self.clear_nmi_interrupt = true;
+        bits
     }
 
     pub fn write_to_status(&mut self, value: u8) {
@@ -128,11 +200,19 @@ impl NesPPU {
                 self.internal_data_buf = self.vram[self.mirror_vram_addr(addr) as usize];
                 result
             }
-            0x3000..=0x3EFF => panic!(
-                "addr space 0x3000..0x3eff is not expected to be use, request = {}",
-                addr
-            ),
-            0x3F00..=0x3FFF => self.palette_table[(addr - 0x3F00) as usize],
+            0x3000..=0x3EFF => {
+                let result = self.internal_data_buf;
+                self.internal_data_buf = self.vram[self.mirror_vram_addr(addr) as usize];
+                result
+            }
+            0x3F00..=0x3F1F => {
+                self.internal_data_buf = self.palette_table[addr as usize];
+                self.internal_data_buf
+            }
+            0x3F20..=0x3FFF => {
+                //TODO
+                0
+            }
             _ => panic!("unexpected access to mirrored space {}", addr),
         }
     }

@@ -20,7 +20,7 @@ impl<'a> Bus<'a> {
     where
         F: FnMut(&NesPPU, &mut Joypad) + 'call,
     {
-        let ppu = NesPPU::new(rom.chr_rom, rom.screen_mirroring);
+        let ppu = NesPPU::new(rom.chr_rom, rom.screen_mirroring, rom.is_chr_ram);
         Bus {
             cpu_vram: [0; 2048],
             prg_rom: rom.prg_rom,
@@ -55,6 +55,11 @@ impl<'a> Bus<'a> {
     }
 
     pub fn poll_nmi_status(&mut self) -> Option<i32> {
+        if self.ppu.clear_nmi_interrupt {
+            self.ppu.clear_nmi_interrupt = false;
+            self.ppu.nmi_interrupt = None;
+            return None;
+        }
         let res = self.ppu.nmi_interrupt;
         self.ppu.nmi_interrupt = None;
         res
@@ -133,6 +138,9 @@ impl Mem for Bus<'_> {
                     values[i] = self.mem_read((data as u16) << 8 | i as u16);
                 }
                 self.ppu.write_to_oam_dma(values);
+                for _ in 0..513 {
+                    self.ppu.tick(1);
+                }
             }
 
             0x4000..=0x4003 => {
