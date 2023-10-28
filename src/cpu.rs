@@ -724,8 +724,12 @@ impl<'a> CPU<'a> {
     }
 
     pub fn brk(&mut self, _mode: &AddressingMode) {
+        // FLAG_INTERRUPTが立っている場合は
+        if self.status & FLAG_INTERRRUPT != 0 {
+            return;
+        }
+
         // プログラム カウンターとプロセッサ ステータスがスタックにプッシュされ、
-        //   ==> ??? FIXME
         self._push_u16(self.program_counter);
         self._push(self.status);
 

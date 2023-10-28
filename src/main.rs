@@ -20,8 +20,8 @@ use self::cpu::CPU;
 use apu::NesAPU;
 use cartrige::load_rom;
 // use crate::cartrige::test::test_rom;
-// use cartrige::test::mario_rom;
 use cartrige::test::alter_ego_rom;
+use cartrige::test::mario_rom;
 use joypad::Joypad;
 // use crate::cpu::trace;
 // use self::rom::Rom;
@@ -71,8 +71,8 @@ fn main() {
     key_map.insert(Keycode::S, joypad::JoypadButton::BUTTON_B);
 
     // let rom = test_rom();
-    // let rom = mario_rom();
-    let rom = alter_ego_rom();
+    let rom = mario_rom();
+    // let rom = alter_ego_rom();
     // let rom = load_rom("rom/BombSweeper.nes");
     let mut frame = Frame::new();
     let apu = NesAPU::new(&sdl_context);

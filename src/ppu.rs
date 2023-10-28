@@ -166,7 +166,7 @@ impl NesPPU {
 
     pub fn write_to_oam_data(&mut self, value: u8) {
         self.oam_data[self.oam_addr as usize] = value;
-        self.oam_addr = self.oam_addr.wrapping_add(1);
+        self.oam_addr = self.oam_addr.wrapping_add(1)
     }
 
     pub fn read_oam_data(&self) -> u8 {
@@ -205,13 +205,10 @@ impl NesPPU {
                 self.internal_data_buf = self.vram[self.mirror_vram_addr(addr) as usize];
                 result
             }
-            0x3F00..=0x3F1F => {
-                self.internal_data_buf = self.palette_table[addr as usize];
+            0x3F00..=0x3FFF => {
+                self.internal_data_buf =
+                    self.palette_table[self.mirror_palette_addr(addr) as usize];
                 self.internal_data_buf
-            }
-            0x3F20..=0x3FFF => {
-                //TODO
-                0
             }
             _ => panic!("unexpected access to mirrored space {}", addr),
         }
@@ -262,10 +259,13 @@ impl NesPPU {
                 self.status.set_sprite_zero_hit(false);
                 self.status.reset_vblank_status();
                 self.nmi_interrupt = None;
+                self.clear_palette_table_histories();
                 return true;
             }
 
             if self.scanline == 257 {
+                // OAMADDR は、プリレンダリングおよび表示可能なスキャンラインのティック
+                // 257 ～ 320 (スプライト タイルの読み込み間隔) のそれぞれの間に 0 に設定されます。
                 self.oam_addr = 0;
             }
         }
@@ -370,9 +370,7 @@ impl ControlRegister {
     }
 
     pub fn generate_vblank_nmi(&mut self) -> bool {
-        let last_status = self.contains(ControlRegister::GENERATE_NMI);
-        self.set(ControlRegister::GENERATE_NMI, true);
-        return last_status;
+        self.contains(ControlRegister::GENERATE_NMI)
     }
 
     pub fn background_pattern_addr(&self) -> u16 {
@@ -383,9 +381,9 @@ impl ControlRegister {
         }
     }
 
-    // pub fn is_sprite_8x16_mode(&self) -> bool {
-    //     self.contains(ControlRegister::SPRITE_SIZE)
-    // }
+    pub fn is_sprite_8x16_mode(&self) -> bool {
+        self.contains(ControlRegister::SPRITE_SIZE)
+    }
 
     pub fn sprite_pattern_addr(&self) -> u16 {
         if !self.contains(ControlRegister::SPRITE_PATTERN_ADDR) {
@@ -410,16 +408,20 @@ impl ControlRegister {
 
 bitflags! {
     pub struct StatusRegister: u8 {
-        const PPU_OPEN_BUS          = 0b0001_1111;
-        const SPRITE_OVERFLOW       = 0b0010_0000;
-        const SPRITE_ZERO_HIT       = 0b0100_0000;
-        const VBLANK_HAS_STARTED    = 0b1000_0000;
+        const PPU_OPEN_BUS1       = 0b0000_0001;
+        const PPU_OPEN_BUS2       = 0b0000_0010;
+        const PPU_OPEN_BUS3       = 0b0000_0100;
+        const PPU_OPEN_BUS4       = 0b0000_1000;
+        const PPU_OPEN_BUS5       = 0b0001_0000; // VRAM状態
+        const SPRITE_OVERFLOW     = 0b0010_0000;
+        const SPRITE_ZERO_HIT     = 0b0100_0000;
+        const VBLANK_HAS_STARTED  = 0b1000_0000;
     }
 }
 
 impl StatusRegister {
     pub fn new() -> Self {
-        StatusRegister::from_bits_truncate(0b0000_0000)
+        StatusRegister::from_bits_truncate(0b0001_0000)
     }
 
     pub fn is_in_vblank(&mut self) -> bool {
@@ -481,7 +483,7 @@ impl ScrollRegister {
         ScrollRegister {
             scroll_x: 0,
             scroll_y: 0,
-            write_x: false,
+            write_x: true,
         }
     }
 
