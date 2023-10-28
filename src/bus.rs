@@ -1,5 +1,5 @@
 use crate::apu::NesAPU;
-use crate::joypad::{self, Joypad};
+use crate::joypad::Joypad;
 use crate::ppu::NesPPU;
 use crate::rom::Rom;
 
@@ -89,19 +89,23 @@ impl Mem for Bus<'_> {
             }
 
             0x2000 | 0x2001 | 0x2003 | 0x2005 | 0x2006 | 0x4014 => {
-                panic!("Attempt to read from write-only PPU addr {:X}", addr);
+                0
+                // panic!("Attempt to read from write-only PPU addr {:X}", addr);
             }
             0x2002 => self.ppu.read_status(),
             0x2004 => self.ppu.read_oam_data(),
             0x2007 => self.ppu.read_data(),
             0x2008..=PPU_REGISTERS_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b00100000_00000111;
-                println!("HERE ADDR: {:X}", addr);
                 self.mem_read(mirror_down_addr)
             }
 
             0x4016 => self.joypad1.read(),
-            0x4017 => self.joypad2.read(),
+            0x4017 => {
+                // readはjoypad2になるらしいがwriteはAPUらしい
+                // self.joypad2.read()
+                0
+            }
 
             PRG_ROM..=PRG_ROM_END => self.read_prg_rom(addr),
 
@@ -130,17 +134,6 @@ impl Mem for Bus<'_> {
             0x2008..=PPU_REGISTERS_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b00100000_00000111;
                 self.mem_write(mirror_down_addr, data);
-            }
-
-            0x4014 => {
-                let mut values: [u8; 256] = [0; 256];
-                for i in 0x00..=0xFF {
-                    values[i] = self.mem_read((data as u16) << 8 | i as u16);
-                }
-                self.ppu.write_to_oam_dma(values);
-                for _ in 0..513 {
-                    self.ppu.tick(1);
-                }
             }
 
             0x4000..=0x4003 => {
@@ -172,7 +165,22 @@ impl Mem for Bus<'_> {
             }
 
             0x4017 => {
-                self.joypad2.write(data);
+                // self.joypad2.write(data);
+                // 書き込みはjoypadではなくAPUになる
+                if (data & 0xC0) == 0 {
+                    //
+                }
+            }
+
+            0x4014 => {
+                let mut values: [u8; 256] = [0; 256];
+                for i in 0x00..=0xFF {
+                    values[i] = self.mem_read((data as u16) << 8 | i as u16);
+                }
+                self.ppu.write_to_oam_dma(values);
+                for _ in 0..513 {
+                    self.ppu.tick(1);
+                }
             }
 
             PRG_ROM..=PRG_ROM_END => {

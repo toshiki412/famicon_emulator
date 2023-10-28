@@ -28,19 +28,19 @@ pub fn render(ppu: &NesPPU, frame: &mut Frame) {
 
     let (main_name_table, second_name_table) = match (&ppu.mirroring, ppu.ctrl.name_table_addr()) {
         (Mirroring::VERTICAL, 0x2000) | (Mirroring::VERTICAL, 0x2800) => {
-            (&ppu.vram[0x000..0x0400], &ppu.vram[0x0400..0x0800])
+            (&ppu.vram[0x000..0x400], &ppu.vram[0x400..0x800])
         }
 
         (Mirroring::VERTICAL, 0x2400) | (Mirroring::VERTICAL, 0x2C00) => {
-            (&ppu.vram[0x0400..0x0800], &ppu.vram[0x0000..0x0400])
+            (&ppu.vram[0x400..0x800], &ppu.vram[0x000..0x400])
         }
 
         (Mirroring::HORIZONTAL, 0x2000) | (Mirroring::HORIZONTAL, 0x2400) => {
-            (&ppu.vram[0x000..0x0400], &ppu.vram[0x0400..0x0800])
+            (&ppu.vram[0x000..0x400], &ppu.vram[0x0400..0x800])
         }
 
         (Mirroring::HORIZONTAL, 0x2800) | (Mirroring::HORIZONTAL, 0x2C00) => {
-            (&ppu.vram[0x0400..0x0800], &ppu.vram[0x0000..0x0400])
+            (&ppu.vram[0x400..0x800], &ppu.vram[0x000..0x400])
         }
 
         (_, _) => {
@@ -76,9 +76,9 @@ pub fn render(ppu: &NesPPU, frame: &mut Frame) {
         ppu,
         frame,
         main_name_table,
-        Rect::new(0, scroll_y, scroll_x, screen_h),
-        (screen_w - scroll_x) as isize,
-        -(scroll_y as isize),
+        Rect::new(scroll_x, 0, screen_w, scroll_y),
+        -(scroll_x as isize),
+        (screen_h - scroll_y) as isize,
     );
 
     //右上
@@ -86,12 +86,13 @@ pub fn render(ppu: &NesPPU, frame: &mut Frame) {
         ppu,
         frame,
         second_name_table,
-        Rect::new(0, 0, scroll_x, scroll_y),
+        Rect::new(0, scroll_y, scroll_x, screen_h),
         (screen_w - scroll_x) as isize,
-        (screen_h - scroll_y) as isize,
+        -(scroll_y as isize),
     );
 
     //draw sprites
+    //TODO 8x16 mode
     for i in (0..ppu.oam_data.len()).step_by(4).rev() {
         let tile_y = ppu.oam_data[i] as usize;
         let tile_idx = ppu.oam_data[i + 1] as u16;
@@ -101,7 +102,7 @@ pub fn render(ppu: &NesPPU, frame: &mut Frame) {
         let flip_vertical = (attr >> 7 & 1) == 1;
         let flip_horizontal = (attr >> 6 & 1) == 1;
         let palette_idx = attr & 0b11;
-        let sprite_palette = sprite_palette(ppu, palette_idx);
+        let sprite_palette = sprite_palette(ppu, tile_y, palette_idx);
 
         let bank: u16 = ppu.ctrl.sprite_pattern_addr();
 
@@ -116,7 +117,7 @@ pub fn render(ppu: &NesPPU, frame: &mut Frame) {
                 upper = upper >> 1;
                 lower = lower >> 1;
                 let rgb = match value {
-                    0 => continue 'ololo,
+                    0 => continue 'ololo, //skip coloring the pixel
                     1 => palette::SYSTEM_PALLETE[sprite_palette[1] as usize],
                     2 => palette::SYSTEM_PALLETE[sprite_palette[2] as usize],
                     3 => palette::SYSTEM_PALLETE[sprite_palette[3] as usize],
@@ -152,22 +153,19 @@ fn bg_pallette(
     };
 
     let pallette_start: usize = 1 + (pallet_idx as usize) * 4;
+    let p = ppu.read_palette_table(tile_row * 8);
     [
-        ppu.palette_table[0],
-        ppu.palette_table[pallette_start],
-        ppu.palette_table[pallette_start + 1],
-        ppu.palette_table[pallette_start + 2],
+        p[0],
+        p[pallette_start],
+        p[pallette_start + 1],
+        p[pallette_start + 2],
     ]
 }
 
-fn sprite_palette(ppu: &NesPPU, palette_idx: u8) -> [u8; 4] {
+fn sprite_palette(ppu: &NesPPU, tile_y: usize, palette_idx: u8) -> [u8; 4] {
     let start = 0x11 + (palette_idx * 4) as usize;
-    [
-        0,
-        ppu.palette_table[start],
-        ppu.palette_table[start + 1],
-        ppu.palette_table[start + 2],
-    ]
+    let p = ppu.read_palette_table(tile_y);
+    [0, p[start], p[start + 1], p[start + 2]]
 }
 
 fn render_name_table(
