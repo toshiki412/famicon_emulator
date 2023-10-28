@@ -2,10 +2,11 @@ use crate::apu::NesAPU;
 use crate::joypad::Joypad;
 use crate::ppu::NesPPU;
 use crate::rom::Rom;
+use crate::MAPPER;
 
 pub struct Bus<'call> {
     cpu_vram: [u8; 2048],
-    prg_rom: Vec<u8>,
+    // prg_rom: Vec<u8>,
     ppu: NesPPU,
     joypad1: Joypad,
     joypad2: Joypad,
@@ -23,7 +24,7 @@ impl<'a> Bus<'a> {
         let ppu = NesPPU::new(rom.chr_rom, rom.screen_mirroring, rom.is_chr_ram);
         Bus {
             cpu_vram: [0; 2048],
-            prg_rom: rom.prg_rom,
+            // prg_rom: rom.prg_rom,
             ppu: ppu,
             joypad1: Joypad::new(),
             joypad2: Joypad::new(),
@@ -33,14 +34,14 @@ impl<'a> Bus<'a> {
         }
     }
 
-    fn read_prg_rom(&self, mut addr: u16) -> u8 {
-        addr -= 0x8000;
-        //programのromは16kB刻み prg_rom.len() == 0x4000は16kB
-        if self.prg_rom.len() == 0x4000 && addr >= 0x4000 {
-            addr = addr % 0x4000;
-        }
-        self.prg_rom[addr as usize]
-    }
+    // fn read_prg_rom(&self, mut addr: u16) -> u8 {
+    //     addr -= 0x8000;
+    //     //programのromは16kB刻み prg_rom.len() == 0x4000は16kB
+    //     if self.prg_rom.len() == 0x4000 && addr >= 0x4000 {
+    //         addr = addr % 0x4000;
+    //     }
+    //     self.prg_rom[addr as usize]
+    // }
 
     pub fn tick(&mut self, cycles: u8) {
         self.cycles += cycles as usize;
@@ -107,7 +108,10 @@ impl Mem for Bus<'_> {
                 0
             }
 
-            PRG_ROM..=PRG_ROM_END => self.read_prg_rom(addr),
+            PRG_ROM..=PRG_ROM_END => {
+                MAPPER.lock().unwrap().read_prg_rom(addr)
+                // self.read_prg_rom(addr)
+            }
 
             _ => {
                 println!("Ignoring mem access at {:X}", addr);
@@ -184,7 +188,8 @@ impl Mem for Bus<'_> {
             }
 
             PRG_ROM..=PRG_ROM_END => {
-                panic!("Attempt tp write to Cartrige ROM space")
+                MAPPER.lock().unwrap().write(addr, data);
+                // panic!("Attempt tp write to Cartrige ROM space")
             }
 
             _ => {

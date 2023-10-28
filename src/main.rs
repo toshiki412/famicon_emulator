@@ -8,6 +8,7 @@ mod cartrige;
 mod cpu;
 mod frame;
 mod joypad;
+mod mapper;
 mod opscodes;
 mod palette;
 mod ppu;
@@ -15,20 +16,18 @@ mod render;
 mod rom;
 
 use std::collections::HashMap;
+use std::sync::Mutex;
 
+use self::bus::{Bus, Mem};
 use self::cpu::CPU;
 use apu::NesAPU;
 use cartrige::load_rom;
-// use crate::cartrige::test::test_rom;
-use cartrige::test::alter_ego_rom;
 use cartrige::test::mario_rom;
 use joypad::Joypad;
-// use crate::cpu::trace;
-// use self::rom::Rom;
-use self::bus::{Bus, Mem};
 
 use frame::show_tile;
 use frame::Frame;
+use mapper::Mapper2;
 use ppu::NesPPU;
 // initialize SDL
 use sdl2::event::Event;
@@ -36,9 +35,10 @@ use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::EventPump;
-// use sdl2::sys::KeyCode;
-// use rand::Rng;
 
+lazy_static! {
+    pub static ref MAPPER: Mutex<Box<Mapper2>> = Mutex::new(Box::new(Mapper2::new()));
+}
 fn main() {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -70,10 +70,10 @@ fn main() {
     key_map.insert(Keycode::A, joypad::JoypadButton::BUTTON_A);
     key_map.insert(Keycode::S, joypad::JoypadButton::BUTTON_B);
 
-    // let rom = test_rom();
-    let rom = mario_rom();
-    // let rom = alter_ego_rom();
-    // let rom = load_rom("rom/BombSweeper.nes");
+    // let rom = mario_rom();
+    let rom = load_rom("rom/dragon_quest2.nes");
+    MAPPER.lock().unwrap().prg_rom = rom.prg_rom.clone();
+
     let mut frame = Frame::new();
     let apu = NesAPU::new(&sdl_context);
     let bus = Bus::new(rom, apu, move |ppu: &NesPPU, joypad1: &mut Joypad| {

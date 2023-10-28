@@ -96,7 +96,7 @@ impl NesAPU {
     pub fn write_3ch(&mut self, addr: u16, value: u8) {
         self.ch3_register.write(addr, value);
 
-        let hz = NES_CPU_CLOCK / (16.0 * (self.ch2_register.frequency as f32 + 1.0));
+        let hz = NES_CPU_CLOCK / (32.0 * (self.ch2_register.frequency as f32 + 1.0));
         //sdlに送る
         self.ch3_sender.send(TriangleNote { hz: hz }).unwrap();
     }
@@ -360,8 +360,8 @@ impl AudioCallback for TriangleWave {
                 self.phase
             } else {
                 1.0 - self.phase
-            } - 0.5)
-                * 2.0;
+            } - 0.25)
+                * 4.0;
             self.phase = (self.phase + self.note.hz / self.freq) % 1.0;
         }
     }
