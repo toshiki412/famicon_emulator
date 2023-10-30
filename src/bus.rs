@@ -50,6 +50,8 @@ impl<'a> Bus<'a> {
         self.ppu.tick(cycles * 3);
         let nmi_after = self.ppu.nmi_interrupt.is_some();
 
+        self.apu.tick(cycles);
+
         if !nmi_before && nmi_after {
             (self.game_loop_callback)(&self.ppu, &mut self.joypad1);
         }
@@ -64,6 +66,10 @@ impl<'a> Bus<'a> {
         let res = self.ppu.nmi_interrupt;
         self.ppu.nmi_interrupt = None;
         res
+    }
+
+    pub fn poll_apu_irq(&mut self) -> bool {
+        self.apu.irq()
     }
 }
 
@@ -101,12 +107,9 @@ impl Mem for Bus<'_> {
                 self.mem_read(mirror_down_addr)
             }
 
+            0x4015 => self.apu.read_status(),
             0x4016 => self.joypad1.read(),
-            0x4017 => {
-                // readはjoypad2になるらしいがwriteはAPUらしい
-                // self.joypad2.read()
-                0
-            }
+            0x4017 => 0,
 
             PRG_ROM..=PRG_ROM_END => {
                 MAPPER.lock().unwrap().read_prg_rom(addr)
@@ -160,20 +163,8 @@ impl Mem for Bus<'_> {
                 self.apu.write4ch(addr, data)
             }
 
-            0x4010..=0x4013 | 0x4015 => {
+            0x4010..=0x4013 => {
                 // TODO DMCch
-            }
-
-            0x4016 => {
-                self.joypad1.write(data);
-            }
-
-            0x4017 => {
-                // self.joypad2.write(data);
-                // 書き込みはjoypadではなくAPUになる
-                if (data & 0xC0) == 0 {
-                    //
-                }
             }
 
             0x4014 => {
@@ -185,6 +176,18 @@ impl Mem for Bus<'_> {
                 for _ in 0..513 {
                     self.ppu.tick(1);
                 }
+            }
+
+            0x4015 => {
+                self.apu.write_status(data);
+            }
+
+            0x4016 => {
+                self.joypad1.write(data);
+            }
+
+            0x4017 => {
+                self.apu.write_frame_counter(data);
             }
 
             PRG_ROM..=PRG_ROM_END => {

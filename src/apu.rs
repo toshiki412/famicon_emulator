@@ -1,3 +1,4 @@
+use bitflags::{bitflags, Flags};
 use sdl2::audio::{AudioCallback, AudioDevice, AudioSpecDesired};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Duration;
@@ -8,15 +9,20 @@ pub struct NesAPU {
     ch3_register: Ch3Register,
     ch4_register: Ch4Register,
 
+    frame_counter: FrameCounter,
+    status: StatusRegister,
+    cycles: usize,
+    counter: usize,
+
     ch1_device: AudioDevice<SquareWave>,
     ch2_device: AudioDevice<SquareWave>,
     ch3_device: AudioDevice<TriangleWave>,
     ch4_device: AudioDevice<NoiseWave>,
 
-    ch1_sender: Sender<SquareNote>,
-    ch2_sender: Sender<SquareNote>,
-    ch3_sender: Sender<TriangleNote>,
-    ch4_sender: Sender<NoiseNote>,
+    ch1_sender: Sender<SquareEvent>,
+    ch2_sender: Sender<SquareEvent>,
+    ch3_sender: Sender<TriangleEvent>,
+    ch4_sender: Sender<NoiseEvent>,
 }
 
 const NES_CPU_CLOCK: f32 = 1_789_772.; //1.78MHz
@@ -32,6 +38,11 @@ impl NesAPU {
             ch2_register: Ch2Register::new(),
             ch3_register: Ch3Register::new(),
             ch4_register: Ch4Register::new(),
+
+            frame_counter: FrameCounter::new(),
+            status: StatusRegister::new(),
+            cycles: 0,
+            counter: 0,
 
             ch1_device: ch1_device,
             ch2_device: ch2_device,
@@ -61,11 +72,11 @@ impl NesAPU {
         let hz = NES_CPU_CLOCK / (16.0 * (self.ch1_register.hz() as f32 + 1.0));
         //sdlに送る
         self.ch1_sender
-            .send(SquareNote {
+            .send(SquareEvent::Note(SquareNote {
                 hz: hz,
                 volume: volume,
                 duty: duty,
-            })
+            }))
             .unwrap();
     }
 
@@ -85,11 +96,11 @@ impl NesAPU {
         let hz = NES_CPU_CLOCK / (16.0 * (self.ch2_register.frequency as f32 + 1.0));
         //sdlに送る
         self.ch2_sender
-            .send(SquareNote {
+            .send(SquareEvent::Note(SquareNote {
                 hz: hz,
                 volume: volume,
                 duty: duty,
-            })
+            }))
             .unwrap();
     }
 
@@ -98,7 +109,9 @@ impl NesAPU {
 
         let hz = NES_CPU_CLOCK / (32.0 * (self.ch2_register.frequency as f32 + 1.0));
         //sdlに送る
-        self.ch3_sender.send(TriangleNote { hz: hz }).unwrap();
+        self.ch3_sender
+            .send(TriangleEvent::Note(TriangleNote { hz: hz }))
+            .unwrap();
     }
 
     pub fn write4ch(&mut self, addr: u16, value: u8) {
@@ -115,12 +128,69 @@ impl NesAPU {
 
         //sdlに送る
         self.ch4_sender
-            .send(NoiseNote {
+            .send(NoiseEvent::Note(NoiseNote {
                 hz: hz,
                 volume: volume,
                 is_long: is_long,
-            })
+            }))
             .unwrap();
+    }
+
+    pub fn write_frame_counter(&mut self, value: u8) {
+        self.frame_counter.update(value);
+
+        //4017への書き込みによってフレームカウンタとシーケンサをリセットする
+        self.cycles = 0;
+        self.counter = 0;
+    }
+
+    pub fn read_status(&mut self) -> u8 {
+        let res = self.status.bits();
+        self.status.remove(StatusRegister::ENABLE_FRAME_IRQ);
+        res
+    }
+
+    pub fn write_status(&mut self, data: u8) {
+        self.status.update(data);
+
+        //1chが無効だったら
+        if !self.status.contains(StatusRegister::ENABLE_1CH) {
+            //1chの音を消す = volumeを0に変える
+            self.ch1_sender.send(SquareEvent::Stop()).unwrap()
+        }
+    }
+
+    pub fn irq(&self) -> bool {
+        self.status.contains(StatusRegister::ENABLE_FRAME_IRQ)
+    }
+
+    pub fn tick(&mut self, cycles: u8) {
+        self.cycles += cycles as usize;
+
+        //一周期分
+        let interval = 7457;
+
+        //7457サイクルごとにここが呼び出される
+        if self.cycles >= interval {
+            self.cycles -= interval;
+            self.counter += 1;
+
+            match self.frame_counter.mode() {
+                4 => {
+                    if self.counter == 2 || self.counter == 4 {
+                        //長さカウンタとスイープユニットのクロック生成
+                    }
+                    if self.counter == 4 {
+                        //割り込みフラグセット
+                        self.counter = 0;
+                        self.status.insert(StatusRegister::ENABLE_FRAME_IRQ);
+                    }
+                    //エンベロープと三角波の線形カウンタのクロックサイクル
+                }
+                5 => {}
+                _ => panic!("cant be"),
+            }
+        }
     }
 }
 
@@ -167,6 +237,12 @@ impl Ch1Register {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+enum SquareEvent {
+    Note(SquareNote),
+    Stop(),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 struct SquareNote {
     hz: f32,
     volume: f32,
@@ -175,7 +251,7 @@ struct SquareNote {
 struct SquareWave {
     freq: f32,
     phase: f32,
-    receiver: Receiver<SquareNote>,
+    receiver: Receiver<SquareEvent>,
     note: SquareNote,
 }
 
@@ -188,7 +264,8 @@ impl AudioCallback for SquareWave {
         for x in out.iter_mut() {
             let res = self.receiver.recv_timeout(Duration::from_millis(0));
             match res {
-                Ok(note) => self.note = note,
+                Ok(SquareEvent::Note(note)) => self.note = note,
+                Ok(SquareEvent::Stop()) => self.note.volume = 0.0,
                 Err(_) => {}
             }
 
@@ -202,10 +279,10 @@ impl AudioCallback for SquareWave {
     }
 }
 
-fn init_square(sdl_context: &sdl2::Sdl) -> (AudioDevice<SquareWave>, Sender<SquareNote>) {
+fn init_square(sdl_context: &sdl2::Sdl) -> (AudioDevice<SquareWave>, Sender<SquareEvent>) {
     let audio_subsystem = sdl_context.audio().unwrap();
 
-    let (sender, receiver) = channel::<SquareNote>();
+    let (sender, receiver) = channel::<SquareEvent>();
 
     let desire_spec = AudioSpecDesired {
         freq: Some(44100), //1秒間に44100個の配列が消費される
@@ -333,13 +410,18 @@ impl Ch3Register {
     }
 }
 
+enum TriangleEvent {
+    Note(TriangleNote),
+    Stop(),
+}
+
 pub struct TriangleNote {
     hz: f32,
 }
 struct TriangleWave {
     freq: f32,
     phase: f32,
-    receiver: Receiver<TriangleNote>,
+    receiver: Receiver<TriangleEvent>,
     note: TriangleNote,
 }
 
@@ -352,7 +434,8 @@ impl AudioCallback for TriangleWave {
         for x in out.iter_mut() {
             let res = self.receiver.recv_timeout(Duration::from_millis(0));
             match res {
-                Ok(note) => self.note = note,
+                Ok(TriangleEvent::Note(note)) => self.note = note,
+                Ok(TriangleEvent::Stop()) => self.note.hz = 0.0,
                 Err(_) => {}
             }
 
@@ -367,10 +450,10 @@ impl AudioCallback for TriangleWave {
     }
 }
 
-fn init_triangle(sdl_context: &sdl2::Sdl) -> (AudioDevice<TriangleWave>, Sender<TriangleNote>) {
+fn init_triangle(sdl_context: &sdl2::Sdl) -> (AudioDevice<TriangleWave>, Sender<TriangleEvent>) {
     let audio_subsystem = sdl_context.audio().unwrap();
 
-    let (sender, receiver) = channel::<TriangleNote>();
+    let (sender, receiver) = channel::<TriangleEvent>();
 
     let desire_spec = AudioSpecDesired {
         freq: Some(44100), //1秒間に44100個の配列が消費される
@@ -456,6 +539,11 @@ impl Ch4Register {
     }
 }
 
+enum NoiseEvent {
+    Note(NoiseNote),
+    Stop(),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct NoiseNote {
     hz: f32,
@@ -465,7 +553,7 @@ pub struct NoiseNote {
 struct NoiseWave {
     freq: f32,
     phase: f32,
-    receiver: Receiver<NoiseNote>,
+    receiver: Receiver<NoiseEvent>,
     is_sound: bool,
     long_random: NoiseRandom,
     short_random: NoiseRandom,
@@ -482,7 +570,8 @@ impl AudioCallback for NoiseWave {
         for x in out.iter_mut() {
             let res = self.receiver.recv_timeout(Duration::from_millis(0));
             match res {
-                Ok(note) => self.note = note,
+                Ok(NoiseEvent::Note(note)) => self.note = note,
+                Ok(NoiseEvent::Stop()) => self.note.volume = 0.0,
                 Err(_) => {}
             }
 
@@ -526,10 +615,10 @@ impl NoiseRandom {
     }
 }
 
-fn init_noise(sdl_context: &sdl2::Sdl) -> (AudioDevice<NoiseWave>, Sender<NoiseNote>) {
+fn init_noise(sdl_context: &sdl2::Sdl) -> (AudioDevice<NoiseWave>, Sender<NoiseEvent>) {
     let audio_subsystem = sdl_context.audio().unwrap();
 
-    let (sender, receiver) = channel::<NoiseNote>();
+    let (sender, receiver) = channel::<NoiseEvent>();
 
     let desire_spec = AudioSpecDesired {
         freq: Some(44100), //1秒間に44100個の配列が消費される
@@ -555,4 +644,55 @@ fn init_noise(sdl_context: &sdl2::Sdl) -> (AudioDevice<NoiseWave>, Sender<NoiseN
 
     device.resume();
     (device, sender)
+}
+
+bitflags! {
+    pub struct FrameCounter: u8 {
+        const DISABLE_IRQ       = 0b0100_0000;
+        const SEQUENCER_MODE    = 0b1000_0000;
+    }
+}
+
+impl FrameCounter {
+    pub fn new() -> Self {
+        FrameCounter::from_bits_truncate(0b1100_0000)
+    }
+
+    pub fn mode(&self) -> u8 {
+        if self.contains(FrameCounter::SEQUENCER_MODE) {
+            5
+        } else {
+            4
+        }
+    }
+
+    pub fn irq(&self) -> bool {
+        !self.contains(FrameCounter::DISABLE_IRQ)
+    }
+
+    pub fn update(&mut self, data: u8) {
+        *self.0.bits_mut() = data;
+    }
+}
+
+bitflags! {
+    pub struct StatusRegister: u8 {
+        const ENABLE_1CH        = 0b0000_0001;
+        const ENABLE_2CH        = 0b0000_0010;
+        const ENABLE_3CH        = 0b0000_0100;
+        const ENABLE_4CH        = 0b0000_1000;
+        const ENABLE_5CH        = 0b0001_0000;
+        const ENABLE_FRAME_IRQ  = 0b0100_0000;
+        const ENABLE_DMC_IRQ    = 0b1000_0000;
+    }
+}
+
+impl StatusRegister {
+    pub fn new() -> Self {
+        StatusRegister::from_bits_truncate(0b1100_0000)
+    }
+
+    pub fn update(&mut self, data: u8) {
+        *self.0.bits_mut() = data;
+    }
 }

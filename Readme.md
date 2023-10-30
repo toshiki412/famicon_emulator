@@ -1,4 +1,4 @@
-install
+# install
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 rustup --version
 rustc --version
@@ -73,6 +73,14 @@ cargo test
 cargo build
 
 # メモ
+## 参考
+- NesDevWiki
+- writing Nes emulator in Rust
+- Nes on FPGA
+- 6502 reference
+- Nes研究室
+- ファミコンエミュレータの創り方
+- Writing NES Emulator in Rustをやった
 
 ## フラグレジスタ
 NV-BDIZC
@@ -283,7 +291,6 @@ NESの画面は、背景が8x8ピクセルのタイルで構成され、各タイルには16色のパレットから
 
 
 2ch 矩形波
-
 $4004 音色・音量
 DDLERRRR
 R:レート
@@ -333,7 +340,6 @@ C:キーオンカウント値
 
 
 ノイズ
-
 $400C　音量
 XXLERRRR
 X:未使用
