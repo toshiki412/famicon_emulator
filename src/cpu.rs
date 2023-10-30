@@ -279,6 +279,10 @@ impl<'a> CPU<'a> {
                 self.interrupt_nmi();
             }
 
+            if self.bus.poll_apu_irq() {
+                self.apu_irq();
+            }
+
             let opscode = self.mem_read(self.program_counter);
             self.program_counter += 1;
 
@@ -324,7 +328,21 @@ impl<'a> CPU<'a> {
         self.status = self.status | FLAG_INTERRRUPT;
         self.bus.tick(2);
         self.program_counter = self.mem_read_u16(0xFFFA);
-        // println!("** interrupt_nmi {:X}", self.program_counter);
+    }
+
+    fn apu_irq(&mut self) {
+        // FLAG_INTERRUPTが立っている場合は
+        if self.status & FLAG_INTERRRUPT != 0 {
+            return;
+        }
+
+        // プログラム カウンターとプロセッサ ステータスがスタックにプッシュされ、
+        self._push_u16(self.program_counter);
+        self._push(self.status);
+
+        // $FFFE/F の IRQ 割り込みベクトルが PC にロードされ、ステータスのブレーク フラグが 1 に設定されます。
+        self.program_counter = self.mem_read_u16(0xFFFE);
+        self.status = self.status | FLAG_BREAK;
     }
 
     fn find_ops(&mut self, opscode: u8) -> Option<OpCode> {
