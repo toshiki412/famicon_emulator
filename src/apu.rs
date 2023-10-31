@@ -375,13 +375,15 @@ impl AudioCallback for SquareWave {
     fn callback(&mut self, out: &mut [Self::Channel]) {
         //矩形波の生成
         for x in out.iter_mut() {
-            let res = self.receiver.recv_timeout(Duration::from_millis(0));
-            match res {
-                Ok(SquareEvent::Note(note)) => self.note = note,
-                Ok(SquareEvent::Enable(b)) => self.enabled_sound = b,
-                Ok(SquareEvent::Envelope(envelope)) => self.envelope = envelope,
-                Ok(SquareEvent::EnvelopeTick()) => self.envelope.tick(),
-                Err(_) => {}
+            loop {
+                let res = self.receiver.recv_timeout(Duration::from_millis(0));
+                match res {
+                    Ok(SquareEvent::Note(note)) => self.note = note,
+                    Ok(SquareEvent::Enable(b)) => self.enabled_sound = b,
+                    Ok(SquareEvent::Envelope(envelope)) => self.envelope = envelope,
+                    Ok(SquareEvent::EnvelopeTick()) => self.envelope.tick(),
+                    Err(_) => break,
+                }
             }
 
             *x = if self.phase <= self.note.duty {
@@ -552,11 +554,13 @@ impl AudioCallback for TriangleWave {
     fn callback(&mut self, out: &mut [Self::Channel]) {
         //三角波の生成
         for x in out.iter_mut() {
-            let res = self.receiver.recv_timeout(Duration::from_millis(0));
-            match res {
-                Ok(TriangleEvent::Note(note)) => self.note = note,
-                Ok(TriangleEvent::Enable(b)) => self.enabled_sound = b,
-                Err(_) => break,
+            loop {
+                let res = self.receiver.recv_timeout(Duration::from_millis(0));
+                match res {
+                    Ok(TriangleEvent::Note(note)) => self.note = note,
+                    Ok(TriangleEvent::Enable(b)) => self.enabled_sound = b,
+                    Err(_) => break,
+                }
             }
 
             *x = (if self.phase <= 0.5 {
@@ -699,15 +703,16 @@ impl AudioCallback for NoiseWave {
     fn callback(&mut self, out: &mut [Self::Channel]) {
         //ノイズの生成
         for x in out.iter_mut() {
-            let res = self.receiver.recv_timeout(Duration::from_millis(0));
-            match res {
-                Ok(NoiseEvent::Note(note)) => self.note = note,
-                Ok(NoiseEvent::Enable(b)) => self.enabled_sound = b,
-                Ok(NoiseEvent::Envelope(e)) => self.envelope = e,
-                Ok(NoiseEvent::EnvelopeTick()) => self.envelope.tick(),
-                Err(_) => {}
+            loop {
+                let res = self.receiver.recv_timeout(Duration::from_millis(0));
+                match res {
+                    Ok(NoiseEvent::Note(note)) => self.note = note,
+                    Ok(NoiseEvent::Enable(b)) => self.enabled_sound = b,
+                    Ok(NoiseEvent::Envelope(e)) => self.envelope = e,
+                    Ok(NoiseEvent::EnvelopeTick()) => self.envelope.tick(),
+                    Err(_) => break,
+                }
             }
-
             *x = if self.is_sound { 0.0 } else { 1.0 } * self.envelope.volume();
 
             if !self.enabled_sound {
