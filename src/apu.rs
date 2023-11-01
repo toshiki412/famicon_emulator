@@ -59,17 +59,11 @@ impl NesAPU {
     pub fn write_1ch(&mut self, addr: u16, value: u8) {
         self.ch1_register.write(addr, value);
 
-        let duty = match self.ch1_register.duty {
-            0x00 => 0.125,
-            0x01 => 0.25,
-            0x02 => 0.5,
-            0x03 => 0.75,
-            _ => panic!("cant be"),
-        };
-
         //sdlに送る
         self.ch1_sender
-            .send(SquareEvent::Note(SquareNote { duty: duty }))
+            .send(SquareEvent::Note(SquareNote {
+                duty: self.ch1_register.duty,
+            }))
             .unwrap();
 
         self.ch1_sender
@@ -96,22 +90,20 @@ impl NesAPU {
                 self.ch1_register.sweep_enable_flag,
             )))
             .unwrap();
+
+        if addr == 0x4003 {
+            self.ch1_sender.send(SquareEvent::Reset()).unwrap();
+        }
     }
 
     pub fn write_2ch(&mut self, addr: u16, value: u8) {
         self.ch2_register.write(addr, value);
 
-        let duty = match self.ch2_register.duty {
-            0x00 => 0.125,
-            0x01 => 0.25,
-            0x02 => 0.5,
-            0x03 => 0.75,
-            _ => panic!("cant be"),
-        };
-
         //sdlに送る
         self.ch2_sender
-            .send(SquareEvent::Note(SquareNote { duty: duty }))
+            .send(SquareEvent::Note(SquareNote {
+                duty: self.ch2_register.duty,
+            }))
             .unwrap();
 
         self.ch2_sender
@@ -138,15 +130,20 @@ impl NesAPU {
                 self.ch2_register.sweep_enable_flag,
             )))
             .unwrap();
+
+        if addr == 0x4007 {
+            self.ch2_sender.send(SquareEvent::Reset()).unwrap();
+        }
     }
 
     pub fn write_3ch(&mut self, addr: u16, value: u8) {
         self.ch3_register.write(addr, value);
 
-        let hz = NES_CPU_CLOCK / (32.0 * (self.ch2_register.frequency as f32 + 1.0));
         //sdlに送る
         self.ch3_sender
-            .send(TriangleEvent::Note(TriangleNote { hz: hz }))
+            .send(TriangleEvent::Note(TriangleNote {
+                frequency: self.ch2_register.frequency,
+            }))
             .unwrap();
 
         self.ch3_sender
@@ -155,6 +152,10 @@ impl NesAPU {
                 LENGTH_COUNTER_TABLE[self.ch3_register.key_off_count as usize],
             )))
             .unwrap();
+
+        if addr == 0x400B {
+            self.ch3_sender.send(TriangleEvent::Reset()).unwrap();
+        }
     }
 
     pub fn write_4ch(&mut self, addr: u16, value: u8) {
@@ -179,11 +180,23 @@ impl NesAPU {
             .unwrap();
 
         self.ch4_sender
+            .send(NoiseEvent::Envelope(Envelope::new(
+                self.ch4_register.volume,
+                self.ch4_register.envelope_flag,
+                !self.ch4_register.key_off_counter_flag,
+            )))
+            .unwrap();
+
+        self.ch4_sender
             .send(NoiseEvent::LengthCounter(LengthCounter::new(
                 self.ch4_register.key_off_counter_flag,
                 LENGTH_COUNTER_TABLE[self.ch4_register.key_off_count as usize],
             )))
             .unwrap();
+
+        if addr == 0x400F {
+            self.ch4_sender.send(NoiseEvent::Reset()).unwrap();
+        }
     }
 
     pub fn write_frame_counter(&mut self, value: u8) {
@@ -372,156 +385,6 @@ impl Ch1Register {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-
-struct Envelope {
-    rate: u8,
-    enabled_sound: bool,
-    loop_flag: bool,
-
-    counter: u8,
-    division_period: u8,
-}
-
-impl Envelope {
-    fn new(rate: u8, enabled_sound: bool, loop_flag: bool) -> Self {
-        Envelope {
-            rate,
-            enabled_sound,
-            loop_flag,
-            counter: 0x0F,
-            division_period: rate + 1,
-        }
-    }
-
-    fn tick(&mut self) {
-        self.division_period -= 1;
-
-        if self.division_period != 0 {
-            return;
-        }
-
-        //division_period = 0は分周期が励起されたときということ
-        //分周期は一周期ごとに0に励起される
-        if self.counter != 0 {
-            self.counter -= 1;
-        } else if self.counter == 0 {
-            if self.loop_flag {
-                self.counter = 0x0F;
-            }
-        }
-        self.division_period = self.rate + 1;
-    }
-
-    fn volume(&self) -> f32 {
-        (if self.enabled_sound {
-            self.counter
-        } else {
-            self.rate
-        }) as f32
-            / 15.0
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-enum SquareEvent {
-    Note(SquareNote),
-    Enable(bool),
-    Envelope(Envelope),
-    EnvelopeTick(),
-    LengthCounter(LengthCounter),
-    LengthCounterTick(),
-    Sweep(Sweep),
-    SweepTick(),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct SquareNote {
-    duty: f32, //波の上と下の比率
-}
-struct SquareWave {
-    freq: f32,
-    phase: f32,
-    receiver: Receiver<SquareEvent>,
-    enabled_sound: bool,
-    note: SquareNote,
-    envelope: Envelope,
-    length_counter: LengthCounter,
-    sweep: Sweep,
-}
-
-impl AudioCallback for SquareWave {
-    type Channel = f32;
-
-    // outは外からもらってくるオーディオのバッファ.ここに波を入れる
-    fn callback(&mut self, out: &mut [Self::Channel]) {
-        //矩形波の生成
-        for x in out.iter_mut() {
-            loop {
-                let res = self.receiver.recv_timeout(Duration::from_millis(0));
-                match res {
-                    Ok(SquareEvent::Note(note)) => self.note = note,
-                    Ok(SquareEvent::Enable(b)) => self.enabled_sound = b,
-                    Ok(SquareEvent::Envelope(envelope)) => self.envelope = envelope,
-                    Ok(SquareEvent::EnvelopeTick()) => self.envelope.tick(),
-                    Ok(SquareEvent::LengthCounter(l)) => self.length_counter = l,
-                    Ok(SquareEvent::LengthCounterTick()) => self.length_counter.tick(),
-                    Ok(SquareEvent::Sweep(s)) => self.sweep = s,
-                    Ok(SquareEvent::SweepTick()) => self.sweep.tick(),
-                    Err(_) => break,
-                }
-            }
-
-            *x = if self.phase <= self.note.duty {
-                self.envelope.volume()
-            } else {
-                -self.envelope.volume()
-            };
-
-            if self.length_counter.mute() {
-                *x = 0.0;
-            }
-
-            if !self.enabled_sound {
-                *x = 0.0;
-            }
-
-            let hz = self.sweep.hz();
-            if hz != 0.0 {
-                self.phase = (self.phase + self.sweep.hz() / self.freq) % 1.0;
-            }
-        }
-    }
-}
-
-fn init_square(sdl_context: &sdl2::Sdl) -> (AudioDevice<SquareWave>, Sender<SquareEvent>) {
-    let audio_subsystem = sdl_context.audio().unwrap();
-
-    let (sender, receiver) = channel::<SquareEvent>();
-
-    let desire_spec = AudioSpecDesired {
-        freq: Some(44100), //1秒間に44100個の配列が消費される
-        channels: Some(1),
-        samples: None,
-    };
-
-    let device = audio_subsystem
-        .open_playback(None, &desire_spec, |spec| SquareWave {
-            freq: spec.freq as f32,
-            phase: 0.0,
-            receiver: receiver,
-            enabled_sound: true,
-            note: SquareNote { duty: 0.0 },
-            envelope: Envelope::new(0, false, false),
-            length_counter: LengthCounter::new(false, 0),
-            sweep: Sweep::new(0, 0, 0, 0, false),
-        })
-        .unwrap();
-
-    device.resume();
-    (device, sender)
-}
-
 struct Ch2Register {
     //4004
     volume: u8,
@@ -625,91 +488,6 @@ impl Ch3Register {
     }
 }
 
-enum TriangleEvent {
-    Note(TriangleNote),
-    Enable(bool),
-    LengthCounter(LengthCounter),
-    LengthCounterTick(),
-}
-
-pub struct TriangleNote {
-    hz: f32,
-}
-struct TriangleWave {
-    freq: f32,
-    phase: f32,
-    receiver: Receiver<TriangleEvent>,
-
-    enabled_sound: bool,
-    note: TriangleNote,
-
-    length_counter: LengthCounter,
-}
-
-impl AudioCallback for TriangleWave {
-    type Channel = f32;
-
-    // outは外からもらってくるオーディオのバッファ.ここに波を入れる
-    fn callback(&mut self, out: &mut [Self::Channel]) {
-        //三角波の生成
-        for x in out.iter_mut() {
-            loop {
-                let res = self.receiver.recv_timeout(Duration::from_millis(0));
-                match res {
-                    Ok(TriangleEvent::Note(note)) => self.note = note,
-                    Ok(TriangleEvent::Enable(b)) => self.enabled_sound = b,
-                    Ok(TriangleEvent::LengthCounter(l)) => self.length_counter = l,
-                    Ok(TriangleEvent::LengthCounterTick()) => self.length_counter.tick(),
-                    Err(_) => break,
-                }
-            }
-
-            *x = (if self.phase <= 0.5 {
-                self.phase
-            } else {
-                1.0 - self.phase
-            } - 0.25)
-                * 4.0;
-
-            if self.length_counter.mute() {
-                *x = 0.0;
-            }
-
-            if !self.enabled_sound {
-                *x = 0.0;
-            }
-
-            self.phase = (self.phase + self.note.hz / self.freq) % 1.0;
-        }
-    }
-}
-
-fn init_triangle(sdl_context: &sdl2::Sdl) -> (AudioDevice<TriangleWave>, Sender<TriangleEvent>) {
-    let audio_subsystem = sdl_context.audio().unwrap();
-
-    let (sender, receiver) = channel::<TriangleEvent>();
-
-    let desire_spec = AudioSpecDesired {
-        freq: Some(44100), //1秒間に44100個の配列が消費される
-        channels: Some(1),
-        samples: None,
-    };
-
-    let device = audio_subsystem
-        .open_playback(None, &desire_spec, |spec| TriangleWave {
-            freq: spec.freq as f32,
-            phase: 0.0,
-            receiver: receiver,
-            enabled_sound: true,
-            note: TriangleNote { hz: 0.0 },
-            length_counter: LengthCounter::new(false, 0),
-        })
-        .unwrap();
-
-    device.resume();
-    (device, sender)
-}
-
 struct Ch4Register {
     //400C
     volume: u8,
@@ -764,6 +542,224 @@ impl Ch4Register {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+enum SquareEvent {
+    Note(SquareNote),
+    Enable(bool),
+    Envelope(Envelope),
+    EnvelopeTick(),
+    LengthCounter(LengthCounter),
+    LengthCounterTick(),
+    Sweep(Sweep),
+    SweepTick(),
+    Reset(),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SquareNote {
+    duty: u8, //波の上と下の比率
+}
+
+impl SquareNote {
+    fn new() -> Self {
+        SquareNote { duty: 0 }
+    }
+
+    fn duty(&self) -> f32 {
+        match self.duty {
+            0x00 => 0.125,
+            0x01 => 0.25,
+            0x02 => 0.5,
+            0x03 => 0.75,
+            _ => panic!("cant be"),
+        }
+    }
+}
+struct SquareWave {
+    freq: f32,
+    phase: f32,
+    receiver: Receiver<SquareEvent>,
+    enabled_sound: bool,
+    note: SquareNote,
+    envelope: Envelope,
+    length_counter: LengthCounter,
+    sweep: Sweep,
+}
+
+impl AudioCallback for SquareWave {
+    type Channel = f32;
+
+    // outは外からもらってくるオーディオのバッファ.ここに波を入れる
+    fn callback(&mut self, out: &mut [Self::Channel]) {
+        //矩形波の生成
+        for x in out.iter_mut() {
+            loop {
+                let res = self.receiver.recv_timeout(Duration::from_millis(0));
+                match res {
+                    Ok(SquareEvent::Note(note)) => self.note = note,
+                    Ok(SquareEvent::Enable(b)) => self.enabled_sound = b,
+                    Ok(SquareEvent::Envelope(envelope)) => self.envelope = envelope,
+                    Ok(SquareEvent::EnvelopeTick()) => self.envelope.tick(),
+                    Ok(SquareEvent::LengthCounter(l)) => self.length_counter = l,
+                    Ok(SquareEvent::LengthCounterTick()) => self.length_counter.tick(),
+                    Ok(SquareEvent::Sweep(s)) => self.sweep = s,
+                    Ok(SquareEvent::SweepTick()) => self.sweep.tick(),
+                    Ok(SquareEvent::Reset()) => {
+                        self.envelope.reset();
+                        self.length_counter.reset();
+                        self.sweep.reset();
+                    }
+                    Err(_) => break,
+                }
+            }
+
+            *x = if self.phase <= self.note.duty() {
+                self.envelope.volume()
+            } else {
+                -self.envelope.volume()
+            };
+
+            if self.length_counter.mute() {
+                *x = 0.0;
+            }
+
+            if !self.enabled_sound {
+                *x = 0.0;
+            }
+
+            let hz = self.sweep.hz();
+            if hz != 0.0 {
+                self.phase = (self.phase + self.sweep.hz() / self.freq) % 1.0;
+            }
+        }
+    }
+}
+
+fn init_square(sdl_context: &sdl2::Sdl) -> (AudioDevice<SquareWave>, Sender<SquareEvent>) {
+    let audio_subsystem = sdl_context.audio().unwrap();
+
+    let (sender, receiver) = channel::<SquareEvent>();
+
+    let desire_spec = AudioSpecDesired {
+        freq: Some(44100), //1秒間に44100個の配列が消費される
+        channels: Some(1),
+        samples: None,
+    };
+
+    let device = audio_subsystem
+        .open_playback(None, &desire_spec, |spec| SquareWave {
+            freq: spec.freq as f32,
+            phase: 0.0,
+            receiver: receiver,
+            enabled_sound: true,
+            note: SquareNote::new(),
+            envelope: Envelope::new(0, false, false),
+            length_counter: LengthCounter::new(false, 0),
+            sweep: Sweep::new(0, 0, 0, 0, false),
+        })
+        .unwrap();
+
+    device.resume();
+    (device, sender)
+}
+
+enum TriangleEvent {
+    Note(TriangleNote),
+    Enable(bool),
+    LengthCounter(LengthCounter),
+    LengthCounterTick(),
+    Reset(),
+}
+
+pub struct TriangleNote {
+    frequency: u16,
+}
+
+impl TriangleNote {
+    fn new() -> Self {
+        TriangleNote { frequency: 0 }
+    }
+
+    fn hz(&self) -> f32 {
+        NES_CPU_CLOCK / (32.0 * (self.frequency as f32 + 1.0))
+    }
+}
+struct TriangleWave {
+    freq: f32,
+    phase: f32,
+    receiver: Receiver<TriangleEvent>,
+
+    enabled_sound: bool,
+    note: TriangleNote,
+
+    length_counter: LengthCounter,
+}
+
+impl AudioCallback for TriangleWave {
+    type Channel = f32;
+
+    // outは外からもらってくるオーディオのバッファ.ここに波を入れる
+    fn callback(&mut self, out: &mut [Self::Channel]) {
+        //三角波の生成
+        for x in out.iter_mut() {
+            loop {
+                let res = self.receiver.recv_timeout(Duration::from_millis(0));
+                match res {
+                    Ok(TriangleEvent::Note(note)) => self.note = note,
+                    Ok(TriangleEvent::Enable(b)) => self.enabled_sound = b,
+                    Ok(TriangleEvent::LengthCounter(l)) => self.length_counter = l,
+                    Ok(TriangleEvent::LengthCounterTick()) => self.length_counter.tick(),
+                    Ok(TriangleEvent::Reset()) => self.length_counter.reset(),
+                    Err(_) => break,
+                }
+            }
+
+            *x = (if self.phase <= 0.5 {
+                self.phase
+            } else {
+                1.0 - self.phase
+            } - 0.25)
+                * 4.0;
+
+            if self.length_counter.mute() {
+                *x = 0.0;
+            }
+
+            if !self.enabled_sound {
+                *x = 0.0;
+            }
+
+            self.phase = (self.phase + self.note.hz() / self.freq) % 1.0;
+        }
+    }
+}
+
+fn init_triangle(sdl_context: &sdl2::Sdl) -> (AudioDevice<TriangleWave>, Sender<TriangleEvent>) {
+    let audio_subsystem = sdl_context.audio().unwrap();
+
+    let (sender, receiver) = channel::<TriangleEvent>();
+
+    let desire_spec = AudioSpecDesired {
+        freq: Some(44100), //1秒間に44100個の配列が消費される
+        channels: Some(1),
+        samples: None,
+    };
+
+    let device = audio_subsystem
+        .open_playback(None, &desire_spec, |spec| TriangleWave {
+            freq: spec.freq as f32,
+            phase: 0.0,
+            receiver: receiver,
+            enabled_sound: true,
+            note: TriangleNote::new(),
+            length_counter: LengthCounter::new(false, 0),
+        })
+        .unwrap();
+
+    device.resume();
+    (device, sender)
+}
+
+#[derive(Debug, Clone, PartialEq)]
 enum NoiseEvent {
     Note(NoiseNote),
     Enable(bool),
@@ -771,6 +767,7 @@ enum NoiseEvent {
     EnvelopeTick(),
     LengthCounter(LengthCounter),
     LengthCounterTick(),
+    Reset(),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -810,6 +807,10 @@ impl AudioCallback for NoiseWave {
                     Ok(NoiseEvent::EnvelopeTick()) => self.envelope.tick(),
                     Ok(NoiseEvent::LengthCounter(l)) => self.length_counter = l,
                     Ok(NoiseEvent::LengthCounterTick()) => self.length_counter.tick(),
+                    Ok(NoiseEvent::Reset()) => {
+                        self.envelope.reset();
+                        self.length_counter.reset();
+                    }
                     Err(_) => break,
                 }
             }
@@ -960,14 +961,74 @@ impl StatusRegister {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+struct Envelope {
+    rate: u8,
+    enabled_sound: bool,
+    loop_flag: bool,
+
+    counter: u8,
+    division_period: u8,
+}
+
+impl Envelope {
+    fn new(rate: u8, enabled_sound: bool, loop_flag: bool) -> Self {
+        Envelope {
+            rate,
+            enabled_sound,
+            loop_flag,
+            counter: 0x0F,
+            division_period: rate + 1,
+        }
+    }
+
+    fn tick(&mut self) {
+        self.division_period -= 1;
+
+        if self.division_period != 0 {
+            return;
+        }
+
+        //division_period = 0は分周期が励起されたときということ
+        //分周期は一周期ごとに0に励起される
+        if self.counter != 0 {
+            self.counter -= 1;
+        } else if self.counter == 0 {
+            if self.loop_flag {
+                self.reset();
+            }
+        }
+        self.division_period = self.rate + 1;
+    }
+
+    fn volume(&self) -> f32 {
+        (if self.enabled_sound {
+            self.counter
+        } else {
+            self.rate
+        }) as f32
+            / 15.0
+    }
+
+    fn reset(&mut self) {
+        self.counter = 0x0F;
+        self.division_period = self.rate + 1;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 struct LengthCounter {
     enabled: bool,
+    count: u8, //もとのカウント値
     counter: u8,
 }
 
 impl LengthCounter {
     fn new(enabled: bool, counter: u8) -> Self {
-        LengthCounter { enabled, counter }
+        LengthCounter {
+            enabled,
+            counter,
+            count: counter,
+        }
     }
 
     fn tick(&mut self) {
@@ -983,6 +1044,10 @@ impl LengthCounter {
     fn mute(&self) -> bool {
         self.enabled && self.counter == 0
     }
+
+    fn reset(&mut self) {
+        self.counter = self.count;
+    }
 }
 
 lazy_static! {
@@ -995,6 +1060,7 @@ lazy_static! {
 
 #[derive(Debug, Clone, PartialEq)]
 struct Sweep {
+    org_freq: u16,
     frequency: u16,
     change_amount: u8,
     change_direction: u8,
@@ -1012,6 +1078,7 @@ impl Sweep {
         enabled: bool,
     ) -> Self {
         Sweep {
+            org_freq: frequency,
             frequency,
             change_amount,
             change_direction,
@@ -1057,5 +1124,10 @@ impl Sweep {
             return 0.0;
         }
         NES_CPU_CLOCK / (16.0 * (self.frequency as f32 + 1.0))
+    }
+
+    fn reset(&mut self) {
+        self.frequency = self.org_freq; //要確認
+        self.counter = 0;
     }
 }
