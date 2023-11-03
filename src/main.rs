@@ -16,7 +16,11 @@ mod render;
 mod rom;
 
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Read;
 use std::sync::Mutex;
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 
 use crate::mapper::Mapper1;
 
@@ -81,6 +85,10 @@ fn main() {
     // MAPPER.lock().unwrap().prg_rom = rom.prg_rom.clone();
     MAPPER.lock().unwrap().rom = rom;
 
+    load_save_data("save.dat");
+
+    let mut now = Instant::now();
+    let interval = 1000 * 1000 * 1000 / 60; //60fps per frame
     let mut frame = Frame::new();
     let apu = NesAPU::new(&sdl_context);
     let bus = Bus::new(apu, move |ppu: &NesPPU, joypad1: &mut Joypad| {
@@ -118,6 +126,11 @@ fn main() {
                 _ => { /* do nothing */ }
             }
         }
+        let time = now.elapsed().as_nanos();
+        if time < interval {
+            sleep(Duration::from_nanos((interval - time) as u64));
+        }
+        now = Instant::now();
     });
 
     //CPU構造体の新しいインスタンスを作成し、busを渡します。
@@ -128,6 +141,14 @@ fn main() {
     cpu.run_with_callback(move |_| {
         // println!("{}", trace(cpu));
     });
+}
+
+fn load_save_data(path: &str) {
+    let mut f = File::open(path).expect("no file found");
+    let metadata = std::fs::metadata(path).expect("unable to read metadata");
+    let mut buffer = vec![0; metadata.len() as usize];
+    f.read(&mut buffer).expect("buffer overflow");
+    MAPPER.lock().unwrap().load_prg_ram(&buffer)
 }
 
 fn handle_user_input(cpu: &mut CPU, event_pump: &mut EventPump) {

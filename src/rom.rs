@@ -17,7 +17,7 @@ pub struct Rom {
     pub chr_rom: Vec<u8>,
     pub mapper: u8,
     pub screen_mirroring: Mirroring,
-    pub is_chr_rom: bool,
+    pub is_chr_ram: bool,
 }
 
 impl Rom {
@@ -62,7 +62,7 @@ impl Rom {
             chr_rom: chr_rom,
             mapper: mapper,
             screen_mirroring: screen_mirroring,
-            is_chr_rom: chr_rom_size == 0,
+            is_chr_ram: chr_rom_size == 0,
         })
     }
 
@@ -72,7 +72,7 @@ impl Rom {
             chr_rom: vec![],
             mapper: 0,
             screen_mirroring: Mirroring::VERTICAL,
-            is_chr_rom: false,
+            is_chr_ram: false,
         };
     }
 }

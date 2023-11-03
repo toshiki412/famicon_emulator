@@ -31,7 +31,7 @@ impl Mapper0 {
 
 pub struct Mapper1 {
     pub rom: Rom,
-    prg_ram: [u8; 8192], //8kiB
+    prg_ram: Vec<u8>,
 
     shift_register: u8,
     shift_count: u8,
@@ -42,11 +42,12 @@ pub struct Mapper1 {
     prg_bank: u8,  //内部レジスタ E000~FFFF
 }
 
+//SUROM
 impl Mapper1 {
     pub fn new() -> Self {
         Mapper1 {
             rom: Rom::empty(),
-            prg_ram: [0xFF; 8192],
+            prg_ram: vec![0xFF; 8192], //8kiB
             shift_register: 0x10,
             shift_count: 0,
             control: 0x0C,
@@ -100,20 +101,35 @@ impl Mapper1 {
     pub fn read_prg_rom(&self, addr: u16) -> u8 {
         let bank_len = 16 * 1024 as usize; //16kB
         let bank_max = self.rom.prg_rom.len() / bank_len;
+        let mut bank = self.prg_bank & 0x0F;
+        let mut first_bank = 0x00;
+        let mut last_bank = bank_max - 1;
+
+        if self.chr_bank0 & 0x10 != 0 {
+            //chr_bankの5ビット目が立っていない場合
+            bank = bank | 0x10;
+            first_bank = first_bank | 0x10;
+            last_bank = last_bank | 0x10;
+        } else {
+            bank = bank | 0x0F;
+            first_bank = first_bank & 0x0F;
+            last_bank = last_bank & 0x0F;
+        }
 
         match (self.control & 0x0C) >> 2 {
             0 | 1 => {
                 // バンク番号の下位ビットを無視して32kBを$8000に切り替える
-                let bank = self.prg_bank & 0x1E;
-                self.rom.prg_rom[((addr as usize - 0x8000) + bank_len * bank as usize) as usize]
+                self.rom.prg_rom
+                    [((addr as usize - 0x8000) + bank_len * (bank & 0x1E) as usize) as usize]
             }
 
             2 => {
                 //最初のバンクを$8000に固定し16kBバンクを$C000に切り替える
                 match addr {
-                    0x8000..=0xBFFF => self.rom.prg_rom[addr as usize - 0x8000],
+                    0x8000..=0xBFFF => {
+                        self.rom.prg_rom[addr as usize - 0x8000 + bank_len * first_bank]
+                    }
                     0xC000..=0xFFFF => {
-                        let bank = self.prg_bank & 0x1F;
                         self.rom.prg_rom
                             [((addr as usize - 0xC000) + bank_len * bank as usize) as usize]
                     }
@@ -124,12 +140,11 @@ impl Mapper1 {
                 //最初のバンクを$C000に固定し16kBバンクを$8000に切り替える
                 match addr {
                     0x8000..=0xBFFF => {
-                        let bank = self.prg_bank & 0x1F;
                         self.rom.prg_rom
                             [((addr as usize - 0x8000) + bank_len * bank as usize) as usize]
                     }
                     0xC000..=0xFFFF => {
-                        self.rom.prg_rom[addr as usize - 0xC000 + bank_len * (bank_max - 1)]
+                        self.rom.prg_rom[addr as usize - 0xC000 + bank_len * last_bank]
                     }
                     _ => panic!("cant be"),
                 }
@@ -151,31 +166,38 @@ impl Mapper1 {
         self.prg_ram[addr as usize - 0x6000]
     }
 
+    pub fn load_prg_ram(&mut self, raw: &Vec<u8>) {
+        self.prg_ram = raw.to_vec()
+    }
+
     pub fn read_chr_rom(&self, addr: u16) -> u8 {
         self.rom.chr_rom[self.chr_rom_addr(addr)]
     }
 
     fn chr_rom_addr(&self, addr: u16) -> usize {
-        let bank_len = 4 * 1024 as usize; //4kB
-        match (self.control & 0x10) >> 4 {
-            0 => {
-                //一度に8kBを切り替える
-                let bank = self.chr_bank0 & 0x1F;
-                addr as usize + bank_len * bank as usize
-            }
-            1 => match addr {
-                0x0000..=0x0FFF => {
-                    let bank = self.chr_bank0 & 0x1F;
-                    addr as usize + bank_len * bank as usize
-                }
-                0x1000..=0x1FFF => {
-                    let bank = self.chr_bank1 & 0x1F;
-                    (addr as usize - 0x1000) + bank_len * bank as usize
-                }
-                _ => panic!("cant be"),
-            },
-            _ => panic!("cant be"),
-        }
+        addr as usize
+
+        // SUROM以外には必要
+        // let bank_len = 4 * 1024 as usize; //4kB
+        // match (self.control & 0x10) >> 4 {
+        //     0 => {
+        //         //一度に8kBを切り替える
+        //         let bank = self.chr_bank0 & 0x1F;
+        //         addr as usize + bank_len * bank as usize
+        //     }
+        //     1 => match addr {
+        //         0x0000..=0x0FFF => {
+        //             let bank = self.chr_bank0 & 0x1F;
+        //             addr as usize + bank_len * bank as usize
+        //         }
+        //         0x1000..=0x1FFF => {
+        //             let bank = self.chr_bank1 & 0x1F;
+        //             (addr as usize - 0x1000) + bank_len * bank as usize
+        //         }
+        //         _ => panic!("cant be"),
+        //     },
+        //     _ => panic!("cant be"),
+        // }
     }
 
     pub fn write_chr_rom(&mut self, addr: u16, value: u8) {
