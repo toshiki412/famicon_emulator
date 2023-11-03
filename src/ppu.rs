@@ -1,9 +1,7 @@
-use crate::rom::Mirroring;
+use crate::{rom::Mirroring, MAPPER};
 use bitflags::bitflags;
 
 pub struct NesPPU {
-    pub chr_rom: Vec<u8>, //背景やキャラの画像データ
-    pub is_chr_rom: bool,
     pub palette_table: [u8; 32], //色の情報
     pub vram: [u8; 2048],
 
@@ -12,7 +10,6 @@ pub struct NesPPU {
     pub nmi_interrupt: Option<i32>,
     pub clear_nmi_interrupt: bool,
 
-    pub mirroring: Mirroring,
     internal_data_buf: u8,
 
     //描画中にパレットテーブルを書き換えることができるのでその対応
@@ -32,15 +29,12 @@ pub struct NesPPU {
 
 impl NesPPU {
     // chr_romがカートリッジ(ゲーム)から直接接続されてくるrom
-    pub fn new(chr_rom: Vec<u8>, mirroring: Mirroring, is_chr_rom: bool) -> Self {
+    pub fn new() -> Self {
         NesPPU {
-            chr_rom: chr_rom,
-            is_chr_rom: is_chr_rom,
             palette_table: [0; 32],
             vram: [0; 2048],
             oam_addr: 0,
             oam_data: [0; 64 * 4],
-            mirroring: mirroring,
             addr: AddrRegister::new(),
             ctrl: ControlRegister::new(),
             status: StatusRegister::new(),
@@ -66,8 +60,8 @@ impl NesPPU {
         match addr {
             0..=0x1FFF => {
                 // FIXME
-                if self.is_chr_rom {
-                    self.chr_rom[addr as usize] = value;
+                if MAPPER.lock().unwrap().rom.is_chr_rom {
+                    MAPPER.lock().unwrap().write_chr_rom(addr, value);
                 }
             }
             0x2000..=0x2FFF => {
@@ -144,8 +138,17 @@ impl NesPPU {
         }
     }
 
+    pub fn read_ctrl(&self) -> u8 {
+        self.ctrl.bits()
+    }
+
+    pub fn read_mask(&self) -> u8 {
+        self.mask.bits()
+    }
+
     pub fn read_status(&mut self) -> u8 {
         self.scroll.reset();
+        self.addr.reset_latch();
         let bits = self.status.bits();
         self.status.reset_vblank_status();
         self.clear_nmi_interrupt = true;
@@ -192,7 +195,7 @@ impl NesPPU {
         match addr {
             0..=0x1FFF => {
                 let result = self.internal_data_buf;
-                self.internal_data_buf = self.chr_rom[addr as usize];
+                self.internal_data_buf = MAPPER.lock().unwrap().read_chr_rom(addr);
                 result
             }
             0x2000..=0x2FFF => {
@@ -224,7 +227,9 @@ impl NesPPU {
         // to the name table index
         let name_table = vram_index / 0x400;
 
-        match (&self.mirroring, name_table) {
+        let mirroring = MAPPER.lock().unwrap().mirroring();
+
+        match (&mirroring, name_table) {
             (Mirroring::VERTICAL, 2) => vram_index - 0x800,
             (Mirroring::VERTICAL, 3) => vram_index - 0x800,
             (Mirroring::HORIZONTAL, 2) => vram_index - 0x400,

@@ -1,7 +1,6 @@
 use crate::apu::NesAPU;
 use crate::joypad::Joypad;
 use crate::ppu::NesPPU;
-use crate::rom::Rom;
 use crate::MAPPER;
 
 pub struct Bus<'call> {
@@ -17,14 +16,13 @@ pub struct Bus<'call> {
 }
 
 impl<'a> Bus<'a> {
-    pub fn new<'call, F>(rom: Rom, apu: NesAPU, game_loop_callback: F) -> Bus<'call>
+    pub fn new<'call, F>(apu: NesAPU, game_loop_callback: F) -> Bus<'call>
     where
         F: FnMut(&NesPPU, &mut Joypad) + 'call,
     {
-        let ppu = NesPPU::new(rom.chr_rom, rom.screen_mirroring, rom.is_chr_ram);
+        let ppu = NesPPU::new();
         Bus {
             cpu_vram: [0; 2048],
-            // prg_rom: rom.prg_rom,
             ppu: ppu,
             joypad1: Joypad::new(),
             joypad2: Joypad::new(),
@@ -33,15 +31,6 @@ impl<'a> Bus<'a> {
             game_loop_callback: Box::from(game_loop_callback),
         }
     }
-
-    // fn read_prg_rom(&self, mut addr: u16) -> u8 {
-    //     addr -= 0x8000;
-    //     //programのromは16kB刻み prg_rom.len() == 0x4000は16kB
-    //     if self.prg_rom.len() == 0x4000 && addr >= 0x4000 {
-    //         addr = addr % 0x4000;
-    //     }
-    //     self.prg_rom[addr as usize]
-    // }
 
     pub fn tick(&mut self, cycles: u8) {
         self.cycles += cycles as usize;
@@ -95,10 +84,12 @@ impl Mem for Bus<'_> {
                 self.cpu_vram[mirror_down_addr as usize]
             }
 
-            0x2000 | 0x2001 | 0x2003 | 0x2005 | 0x2006 | 0x4014 => {
+            0x2003 | 0x2005 | 0x2006 | 0x4014 => {
                 0
                 // panic!("Attempt to read from write-only PPU addr {:X}", addr);
             }
+            0x2000 => self.ppu.read_ctrl(),
+            0x2001 => self.ppu.read_mask(),
             0x2002 => self.ppu.read_status(),
             0x2004 => self.ppu.read_oam_data(),
             0x2007 => self.ppu.read_data(),
@@ -110,6 +101,8 @@ impl Mem for Bus<'_> {
             0x4015 => self.apu.read_status(),
             0x4016 => self.joypad1.read(),
             0x4017 => 0,
+
+            0x6000..=0x7FFF => MAPPER.lock().unwrap().read_prg_rom(addr),
 
             PRG_ROM..=PRG_ROM_END => {
                 MAPPER.lock().unwrap().read_prg_rom(addr)
@@ -190,9 +183,10 @@ impl Mem for Bus<'_> {
                 self.apu.write_frame_counter(data);
             }
 
+            0x6000..=0x7FFF => MAPPER.lock().unwrap().write_prg_ram(addr, data),
+
             PRG_ROM..=PRG_ROM_END => {
                 MAPPER.lock().unwrap().write(addr, data);
-                // panic!("Attempt tp write to Cartrige ROM space")
             }
 
             _ => {

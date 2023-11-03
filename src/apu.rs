@@ -142,7 +142,7 @@ impl NesAPU {
         //sdlに送る
         self.ch3_sender
             .send(TriangleEvent::Note(TriangleNote {
-                frequency: self.ch2_register.frequency,
+                frequency: self.ch3_register.frequency,
             }))
             .unwrap();
 
