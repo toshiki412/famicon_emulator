@@ -60,7 +60,7 @@ impl NesPPU {
         match addr {
             0..=0x1FFF => {
                 // FIXME
-                if MAPPER.lock().unwrap().rom.is_chr_rom {
+                if MAPPER.lock().unwrap().rom.is_chr_ram {
                     MAPPER.lock().unwrap().write_chr_rom(addr, value);
                 }
             }
