@@ -742,13 +742,13 @@ impl<'a> CPU<'a> {
     }
 
     pub fn brk(&mut self, _mode: &AddressingMode) {
-        // FLAG_INTERRUPTが立っている場合は
-        if self.status & FLAG_INTERRRUPT != 0 {
+        // FLAG_BREAKが立っている場合は
+        if self.status & FLAG_BREAK != 0 {
             return;
         }
 
-        // プログラム カウンターとプロセッサ ステータスがスタックにプッシュされ、
-        self._push_u16(self.program_counter);
+        // プログラムカウンター(brkの次の命令)とプロセッサ ステータスがスタックにプッシュされる
+        self._push_u16(self.program_counter + 1);
         self._push(self.status);
 
         // $FFFE/F の IRQ 割り込みベクトルが PC にロードされ、ステータスのブレーク フラグが 1 に設定されます。
@@ -1188,10 +1188,10 @@ fn cpu2str(cpu: &CPU) -> String {
 //cfgは条件付きコンパイル。テストするとき以外はこのモジュールはコンパイルしない
 #[cfg(test)]
 mod test {
-    use super::*;
-    use crate::bus::Bus;
-    use crate::cartrige::test::test_rom;
-    use crate::ppu::NesPPU;
+    // use super::*;
+    // use crate::bus::Bus;
+    // use crate::cartrige::test::test_rom;
+    // use crate::ppu::NesPPU;
 
     // #[test]
     // fn test_frmat_trace() {
@@ -1257,7 +1257,7 @@ mod test {
     //     );
     // }
 
-    /*　instruction test
+    /* instruction test
 
     use super::*;
 
@@ -2243,7 +2243,7 @@ mod test {
     // RTS
     #[test]
     fn test_rts() {
-        let cpu = run(vec![0x60,0x00], |cpu| {
+        let cpu = run(vec![0x60, 0x00], |cpu| {
             cpu.mem_write(0x01FF, 0x05);
             cpu.mem_write(0x01FE, 0x06);
 
@@ -2257,7 +2257,7 @@ mod test {
         assert_eq!(cpu.program_counter, 0x0508);
         assert_eq!(cpu.stack_pointer, 0xff);
         //書きつぶされていないか
-        assert_eq!(cpu.mem_read_u16(0x01fe),0x0506);
+        assert_eq!(cpu.mem_read_u16(0x01fe), 0x0506);
     }
 
     #[test]
@@ -2272,7 +2272,7 @@ mod test {
         assert_eq!(cpu.program_counter, 0x8004);
         assert_eq!(cpu.stack_pointer, 0xff);
         //書きつぶされていないか
-        assert_eq!(cpu.mem_read_u16(0x01fe),0x8003);
+        assert_eq!(cpu.mem_read_u16(0x01fe), 0x8003);
     }
 
     // LDX
@@ -2294,7 +2294,7 @@ mod test {
     // NOP
     #[test]
     fn test_nop() {
-        let cpu = run(vec![0xea,0x00], |_| {});
+        let cpu = run(vec![0xea, 0x00], |_| {});
         assert_eq!(cpu.program_counter, 0x8002);
         assert_status(&cpu, 0);
     }
@@ -2302,7 +2302,7 @@ mod test {
     // PHA
     #[test]
     fn test_pha() {
-        let cpu = run(vec![0x48,0x00], |cpu| {
+        let cpu = run(vec![0x48, 0x00], |cpu| {
             cpu.register_a = 0x07;
         });
         assert_eq!(cpu.register_a, 0x07);
@@ -2314,8 +2314,8 @@ mod test {
     // PLA
     #[test]
     fn test_pla() {
-        let cpu = run(vec![0x68,0x00], |cpu| {
-            cpu.mem_write(0x01FF,0x07);
+        let cpu = run(vec![0x68, 0x00], |cpu| {
+            cpu.mem_write(0x01FF, 0x07);
             cpu.stack_pointer = 0xfe;
         });
         assert_eq!(cpu.register_a, 0x07);
@@ -2325,8 +2325,8 @@ mod test {
 
     #[test]
     fn test_pla_zero() {
-        let cpu = run(vec![0x68,0x00], |cpu| {
-            cpu.mem_write(0x01FF,0x00);
+        let cpu = run(vec![0x68, 0x00], |cpu| {
+            cpu.mem_write(0x01FF, 0x00);
             cpu.stack_pointer = 0xfe;
         });
         assert_eq!(cpu.register_a, 0x00);
@@ -2336,7 +2336,7 @@ mod test {
 
     #[test]
     fn test_pha_and_pla() {
-        let cpu = run(vec![0x48,0xa9,0x60,0x68,0x00], |cpu| {
+        let cpu = run(vec![0x48, 0xa9, 0x60, 0x68, 0x00], |cpu| {
             cpu.register_a = 0x80;
         });
         assert_eq!(cpu.register_a, 0x80);
@@ -2348,7 +2348,7 @@ mod test {
     // PHP
     #[test]
     fn test_php() {
-        let cpu = run(vec![0x08,0x00], |cpu| {
+        let cpu = run(vec![0x08, 0x00], |cpu| {
             cpu.status = FLAG_NEGATIVE | FLAG_OVERFLOW;
         });
         assert_eq!(cpu.stack_pointer, 0xfe);
@@ -2359,7 +2359,7 @@ mod test {
     // PLP
     #[test]
     fn test_plp() {
-        let cpu = run(vec![0x28,0x00], |cpu| {
+        let cpu = run(vec![0x28, 0x00], |cpu| {
             cpu.mem_write(0x01ff, FLAG_CARRY | FLAG_ZERO);
             cpu.stack_pointer = 0xfe;
         });
@@ -2369,7 +2369,7 @@ mod test {
 
     #[test]
     fn test_php_and_plp() {
-        let cpu = run(vec![0x08,0xe8,0x28,0x00], |cpu| {
+        let cpu = run(vec![0x08, 0xe8, 0x28, 0x00], |cpu| {
             cpu.register_x = 0xff;
             cpu.status = FLAG_OVERFLOW | FLAG_CARRY;
         });
@@ -2399,7 +2399,7 @@ mod test {
 
     // TXA
     #[test]
-    fn test_txa(){
+    fn test_txa() {
         let cpu = run(vec![0x8A, 0x00], |cpu| {
             cpu.register_x = 0x10;
         });
@@ -2408,7 +2408,7 @@ mod test {
 
     // TAY
     #[test]
-    fn test_tay(){
+    fn test_tay() {
         let cpu = run(vec![0xA8, 0x00], |cpu| {
             cpu.register_a = 0x10;
         });
@@ -2417,7 +2417,7 @@ mod test {
 
     // TYA
     #[test]
-    fn test_tya(){
+    fn test_tya() {
         let cpu = run(vec![0x98, 0x00], |cpu| {
             cpu.register_y = 0x10;
         });
@@ -2426,15 +2426,14 @@ mod test {
 
     // TSX
     #[test]
-    fn test_tsx(){
-        let cpu = run(vec![0xba, 0x00], |_| {
-        });
+    fn test_tsx() {
+        let cpu = run(vec![0xba, 0x00], |_| {});
         assert_eq!(cpu.register_x, 0xff);
         assert_status(&cpu, FLAG_NEGATIVE);
     }
 
     #[test]
-    fn test_tsx_some_value(){
+    fn test_tsx_some_value() {
         let cpu = run(vec![0xba, 0x00], |cpu| {
             cpu.stack_pointer = 0x75;
         });
@@ -2444,12 +2443,11 @@ mod test {
 
     // TXS
     #[test]
-    fn test_txs(){
+    fn test_txs() {
         let cpu = run(vec![0x9a, 0x00], |cpu| {
             cpu.register_x = 0x80;
         });
         assert_eq!(cpu.stack_pointer, 0x80);
         assert_status(&cpu, 0);
-    }
-    */
+    }*/
 }

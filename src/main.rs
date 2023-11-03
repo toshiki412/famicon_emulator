@@ -18,6 +18,8 @@ mod rom;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+use crate::mapper::Mapper1;
+
 use self::bus::{Bus, Mem};
 use self::cpu::CPU;
 use apu::NesAPU;
@@ -27,7 +29,7 @@ use joypad::Joypad;
 
 use frame::show_tile;
 use frame::Frame;
-use mapper::Mapper2;
+use mapper::{Mapper0, Mapper2};
 use ppu::NesPPU;
 // initialize SDL
 use sdl2::event::Event;
@@ -37,8 +39,11 @@ use sdl2::pixels::PixelFormatEnum;
 use sdl2::EventPump;
 
 lazy_static! {
-    pub static ref MAPPER: Mutex<Box<Mapper2>> = Mutex::new(Box::new(Mapper2::new()));
+    pub static ref MAPPER: Mutex<Box<Mapper1>> = Mutex::new(Box::new(Mapper1::new()));
 }
+// lazy_static! {
+//     pub static ref MAPPER: Mutex<Box<Mapper2>> = Mutex::new(Box::new(Mapper2::new()));
+// }
 fn main() {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -70,13 +75,15 @@ fn main() {
     key_map.insert(Keycode::A, joypad::JoypadButton::BUTTON_A);
     key_map.insert(Keycode::S, joypad::JoypadButton::BUTTON_B);
 
-    // let rom = mario_rom();
-    let rom = load_rom("rom/dragon_quest2.nes");
-    MAPPER.lock().unwrap().prg_rom = rom.prg_rom.clone();
+    let rom = mario_rom(); //mapper0
+                           // let rom = load_rom("rom/dragon_quest2.nes"); //mapper2
+
+    // MAPPER.lock().unwrap().prg_rom = rom.prg_rom.clone();
+    MAPPER.lock().unwrap().rom = rom;
 
     let mut frame = Frame::new();
     let apu = NesAPU::new(&sdl_context);
-    let bus = Bus::new(rom, apu, move |ppu: &NesPPU, joypad1: &mut Joypad| {
+    let bus = Bus::new(apu, move |ppu: &NesPPU, joypad1: &mut Joypad| {
         // PPUから画面情報を取得し、それをframeに描画。
         render::render(ppu, &mut frame);
 
