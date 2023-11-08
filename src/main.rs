@@ -79,13 +79,14 @@ fn main() {
     key_map.insert(Keycode::A, joypad::JoypadButton::BUTTON_A);
     key_map.insert(Keycode::S, joypad::JoypadButton::BUTTON_B);
 
-    let rom = mario_rom(); //mapper0
-                           // let rom = load_rom("rom/dragon_quest2.nes"); //mapper2
+    // let rom = mario_rom(); //mapper0
+    // let rom = load_rom("rom/dragon_quest2.nes"); //mapper2
+    let rom = load_rom("rom/dragon_quest4.nes"); //mapper1
 
     // MAPPER.lock().unwrap().prg_rom = rom.prg_rom.clone();
     MAPPER.lock().unwrap().rom = rom;
 
-    load_save_data("save.dat");
+    // load_save_data("save.dat");
 
     let mut now = Instant::now();
     let interval = 1000 * 1000 * 1000 / 60; //60fps per frame

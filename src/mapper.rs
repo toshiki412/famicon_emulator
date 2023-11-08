@@ -146,7 +146,10 @@ impl Mapper1 {
                     0xC000..=0xFFFF => {
                         self.rom.prg_rom[addr as usize - 0xC000 + bank_len * last_bank]
                     }
-                    _ => panic!("cant be"),
+                    _ => {
+                        println!("addr: {:04X}", addr);
+                        panic!("cant be")
+                    }
                 }
             }
             _ => panic!("cant be"),

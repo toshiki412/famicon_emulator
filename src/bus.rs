@@ -102,7 +102,7 @@ impl Mem for Bus<'_> {
             0x4016 => self.joypad1.read(),
             0x4017 => 0,
 
-            0x6000..=0x7FFF => MAPPER.lock().unwrap().read_prg_rom(addr),
+            0x6000..=0x7FFF => MAPPER.lock().unwrap().read_prg_ram(addr),
 
             PRG_ROM..=PRG_ROM_END => {
                 MAPPER.lock().unwrap().read_prg_rom(addr)
