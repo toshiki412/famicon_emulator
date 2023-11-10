@@ -160,7 +160,7 @@ fn bg_pallette(
     let pallette_start: usize = 1 + (pallet_idx as usize) * 4;
     let p = ppu.read_palette_table(tile_row * 8);
     [
-        p[0] & 0x3F,
+        p[0] & 0x3F, //64(0x3F)でマスクして255までのindexを64までにする
         p[pallette_start] & 0x3F,
         p[pallette_start + 1] & 0x3F,
         p[pallette_start + 2] & 0x3F,
