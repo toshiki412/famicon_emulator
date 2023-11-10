@@ -2,4 +2,5 @@ target
 .vscode
 rom
 *.log
-save.dat
+save*.dat
+onepiece.rs

@@ -28,10 +28,8 @@ use self::bus::{Bus, Mem};
 use self::cpu::CPU;
 use apu::NesAPU;
 use cartrige::load_rom;
-use cartrige::test::mario_rom;
 use joypad::Joypad;
 
-use frame::show_tile;
 use frame::Frame;
 use mapper::{Mapper0, Mapper2};
 use ppu::NesPPU;
@@ -86,7 +84,7 @@ fn main() {
     // MAPPER.lock().unwrap().prg_rom = rom.prg_rom.clone();
     MAPPER.lock().unwrap().rom = rom;
 
-    // load_save_data("save.dat");
+    load_save_data("save.dat");
 
     let mut now = Instant::now();
     let interval = 1000 * 1000 * 1000 / 60; //60fps per frame
@@ -145,7 +143,7 @@ fn main() {
 }
 
 fn load_save_data(path: &str) {
-    let mut f = File::open(path).expect("no file found");
+    let mut f = File::open(path).expect("no save file");
     let metadata = std::fs::metadata(path).expect("unable to read metadata");
     let mut buffer = vec![0; metadata.len() as usize];
     f.read(&mut buffer).expect("buffer overflow");
