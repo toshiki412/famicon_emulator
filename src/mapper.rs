@@ -105,13 +105,13 @@ impl Mapper1 {
         let mut first_bank = 0x00;
         let mut last_bank = bank_max - 1;
 
+        //chr_bankの5ビット目が立っていない場合
         if self.chr_bank0 & 0x10 != 0 {
-            //chr_bankの5ビット目が立っていない場合
             bank = bank | 0x10;
             first_bank = first_bank | 0x10;
             last_bank = last_bank | 0x10;
         } else {
-            bank = bank | 0x0F;
+            bank = bank & 0x0F;
             first_bank = first_bank & 0x0F;
             last_bank = last_bank & 0x0F;
         }
@@ -156,23 +156,6 @@ impl Mapper1 {
         }
     }
 
-    pub fn write_prg_ram(&mut self, addr: u16, data: u8) {
-        self.prg_ram[addr as usize - 0x6000] = data;
-
-        //FIXME 保存処理
-        let mut file = File::create("save.dat").unwrap();
-        file.write_all(&self.prg_ram).unwrap();
-        file.flush().unwrap();
-    }
-
-    pub fn read_prg_ram(&self, addr: u16) -> u8 {
-        self.prg_ram[addr as usize - 0x6000]
-    }
-
-    pub fn load_prg_ram(&mut self, raw: &Vec<u8>) {
-        self.prg_ram = raw.to_vec()
-    }
-
     pub fn read_chr_rom(&self, addr: u16) -> u8 {
         self.rom.chr_rom[self.chr_rom_addr(addr)]
     }
@@ -206,6 +189,23 @@ impl Mapper1 {
     pub fn write_chr_rom(&mut self, addr: u16, value: u8) {
         let mirrored_addr = self.chr_rom_addr(addr);
         self.rom.chr_rom[mirrored_addr] = value;
+    }
+
+    pub fn write_prg_ram(&mut self, addr: u16, data: u8) {
+        self.prg_ram[addr as usize - 0x6000] = data;
+
+        //FIXME 保存処理
+        let mut file = File::create("save.dat").unwrap();
+        file.write_all(&self.prg_ram).unwrap();
+        file.flush().unwrap();
+    }
+
+    pub fn read_prg_ram(&self, addr: u16) -> u8 {
+        self.prg_ram[addr as usize - 0x6000]
+    }
+
+    pub fn load_prg_ram(&mut self, raw: &Vec<u8>) {
+        self.prg_ram = raw.to_vec()
     }
 }
 
