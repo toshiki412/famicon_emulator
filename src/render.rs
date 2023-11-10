@@ -208,7 +208,7 @@ fn render_name_table(
                 upper = upper >> 1;
                 lower = lower >> 1;
                 let rgb = match value {
-                    0 => palette::SYSTEM_PALLETE[ppu.palette_table[0] as usize],
+                    0 => palette::SYSTEM_PALLETE[palette[0] as usize],
                     1 => palette::SYSTEM_PALLETE[palette[1] as usize],
                     2 => palette::SYSTEM_PALLETE[palette[2] as usize],
                     3 => palette::SYSTEM_PALLETE[palette[3] as usize],
