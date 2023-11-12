@@ -1,7 +1,8 @@
 use crate::opscodes::{call, CPU_OPS_CODES};
+use log::{debug, info, trace};
 
 use crate::bus::{Bus, Mem};
-use crate::ppu::AddrRegister;
+// use crate::ppu::AddrRegister;
 
 #[derive(Debug, Clone, PartialEq)] //deriveは継承。Debugトレイトを継承。
 #[allow(non_camel_case_types)] //allowはリンカに対してnon_camel_case_typeのエラーを出さないようにする
@@ -83,6 +84,8 @@ pub struct CPU<'a> {
     pub bus: Bus<'a>,
     pub add_cycles: u8,
 }
+
+pub static mut IN_TRACE: bool = false;
 
 impl Mem for CPU<'_> {
     //指定したアドレス(addr)から1バイト(8bit)のデータを読む関数
@@ -362,23 +365,23 @@ impl<'a> CPU<'a> {
         todo!("unofficial")
     }
 
-    pub fn anc(&mut self, mode: &AddressingMode) {
+    pub fn anc(&mut self, _mode: &AddressingMode) {
         todo!("unofficial")
     }
 
-    pub fn arr(&mut self, mode: &AddressingMode) {
+    pub fn arr(&mut self, _mode: &AddressingMode) {
         todo!("unofficial")
     }
 
-    pub fn asr(&mut self, mode: &AddressingMode) {
+    pub fn asr(&mut self, _mode: &AddressingMode) {
         todo!("unofficial")
     }
 
-    pub fn lxa(&mut self, mode: &AddressingMode) {
+    pub fn lxa(&mut self, _mode: &AddressingMode) {
         todo!("unofficial")
     }
 
-    pub fn sha(&mut self, mode: &AddressingMode) {
+    pub fn sha(&mut self, _mode: &AddressingMode) {
         todo!("unofficial")
     }
 
@@ -396,7 +399,7 @@ impl<'a> CPU<'a> {
         todo!("unofficial")
     }
 
-    pub fn jam(&mut self, mode: &AddressingMode) {
+    pub fn jam(&mut self, _mode: &AddressingMode) {
         self.program_counter -= 1;
         panic!("call jam")
     }
@@ -979,6 +982,8 @@ impl<'a> CPU<'a> {
 }
 
 pub fn trace(cpu: &mut CPU) -> String {
+    unsafe { IN_TRACE = true };
+
     let program_counter = cpu.program_counter - 1;
     let pc = format!("{:<04X}", program_counter);
     let op = cpu.mem_read(program_counter);
@@ -994,13 +999,19 @@ pub fn trace(cpu: &mut CPU) -> String {
     let memacc = memory_access(cpu, &ops, &args);
     let status = cpu2str(cpu);
 
-    format!(
+    let log = format!(
         "{:<6}{:<9}{:<33}{}",
         pc,
         bin,
         vec![asm, memacc].join(" "),
         status
-    )
+    );
+
+    trace!("{}", log);
+
+    unsafe { IN_TRACE = false };
+
+    log
 }
 
 fn binary(op: u8, args: &Vec<u8>) -> String {

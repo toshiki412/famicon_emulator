@@ -15,14 +15,19 @@ mod ppu;
 mod render;
 mod rom;
 
+use crate::cpu::{trace, IN_TRACE};
+
+use log::{debug, info, log_enabled, trace, Level};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
+use std::io::Write;
 use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use crate::mapper::Mapper1;
+// use crate::mapper::Mapper1;
+use crate::mapper::Mapper;
 
 use self::bus::{Bus, Mem};
 use self::cpu::CPU;
@@ -31,7 +36,7 @@ use cartrige::load_rom;
 use joypad::Joypad;
 
 use frame::Frame;
-use mapper::{Mapper0, Mapper2};
+use mapper::{Mapper0, Mapper1, Mapper2};
 use ppu::NesPPU;
 // initialize SDL
 use sdl2::event::Event;
@@ -41,16 +46,25 @@ use sdl2::pixels::PixelFormatEnum;
 use sdl2::EventPump;
 
 lazy_static! {
-    pub static ref MAPPER: Mutex<Box<Mapper1>> = Mutex::new(Box::new(Mapper1::new()));
+    pub static ref MAPPER: Mutex<Box<Mapper0>> = Mutex::new(Box::new(Mapper0::new()));
 }
-// lazy_static! {
-//     pub static ref MAPPER: Mutex<Box<Mapper2>> = Mutex::new(Box::new(Mapper2::new()));
-// }
+
 fn main() {
+    env_logger::builder()
+        .format(|buf, record| {
+            let style = buf.style();
+            if unsafe { IN_TRACE } {
+                writeln!(buf, "[TRACE] {}", style.value(record.args()))
+            } else {
+                writeln!(buf, "        {}", style.value(record.args()))
+            }
+        })
+        .format_timestamp(None)
+        .init();
+
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
     let window = video_subsystem
-        // .window("snake game", (32.0 * 10.0) as u32, (32.0 * 10.0) as u32)
         .window("NES Emulator", (256.0 * 2.0) as u32, (240.0 * 2.0) as u32)
         .position_centered()
         .build()
@@ -77,14 +91,14 @@ fn main() {
     key_map.insert(Keycode::A, joypad::JoypadButton::BUTTON_A);
     key_map.insert(Keycode::S, joypad::JoypadButton::BUTTON_B);
 
-    // let rom = mario_rom(); //mapper0
+    // let rom = load_rom("rom/dragon_quest4.nes"); //mapper1
+    let rom = load_rom("rom/mario.nes"); //mapper0
+    info!("hello");
     // let rom = load_rom("rom/dragon_quest2.nes"); //mapper2
-    let rom = load_rom("rom/dragon_quest4.nes"); //mapper1
 
-    // MAPPER.lock().unwrap().prg_rom = rom.prg_rom.clone();
     MAPPER.lock().unwrap().rom = rom;
 
-    load_save_data("save.dat");
+    // load_save_data("save.dat");
 
     let mut now = Instant::now();
     let interval = 1000 * 1000 * 1000 / 60; //60fps per frame
@@ -136,10 +150,7 @@ fn main() {
     // これにより、CPUがエミュレーションされ、NESのプログラムを実行できます。
     let mut cpu = CPU::new(bus);
     cpu.reset();
-    // cpu.run();
-    cpu.run_with_callback(move |_| {
-        // println!("{}", trace(cpu));
-    });
+    cpu.run_with_callback(move |_| {});
 }
 
 fn load_save_data(path: &str) {

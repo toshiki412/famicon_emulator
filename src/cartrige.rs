@@ -13,21 +13,21 @@ pub fn load_rom(path: &str) -> Rom {
 }
 
 pub mod test {
-    use super::*; //外側の関数とuseを全部持ってくる
+    // use super::*; //外側の関数とuseを全部持ってくる
 
     // pub fn snake_rom() -> Rom {
     //     load_rom("rom/snake.nes")
     // }
 
-    pub fn test_rom() -> Rom {
-        load_rom("rom/nestest.nes")
-    }
+    // pub fn test_rom() -> Rom {
+    //     load_rom("rom/nestest.nes")
+    // }
 
-    pub fn mario_rom() -> Rom {
-        load_rom("rom/mario.nes")
-    }
+    // pub fn mario_rom() -> Rom {
+    //     load_rom("rom/mario.nes")
+    // }
 
-    pub fn alter_ego_rom() -> Rom {
-        load_rom("rom/Alter_Ego.nes")
-    }
+    // pub fn alter_ego_rom() -> Rom {
+    //     load_rom("rom/Alter_Ego.nes")
+    // }
 }
