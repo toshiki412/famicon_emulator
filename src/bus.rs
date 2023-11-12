@@ -1,7 +1,9 @@
 use crate::apu::NesAPU;
 use crate::joypad::Joypad;
+use crate::mapper::Mapper;
 use crate::ppu::NesPPU;
 use crate::MAPPER;
+use log::{debug, error, info, log_enabled, trace, warn, Level};
 
 pub struct Bus<'call> {
     cpu_vram: [u8; 2048],
@@ -181,6 +183,7 @@ impl Mem for Bus<'_> {
 
             0x4017 => {
                 self.apu.write_frame_counter(data);
+                info!("WRITE ACCESS 0x4017. {:02X}", data);
             }
 
             0x6000..=0x7FFF => MAPPER.lock().unwrap().write_prg_ram(addr, data),

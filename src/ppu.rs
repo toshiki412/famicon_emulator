@@ -1,3 +1,4 @@
+use crate::mapper::Mapper;
 use crate::{rom::Mirroring, MAPPER};
 use bitflags::bitflags;
 
