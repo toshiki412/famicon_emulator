@@ -616,9 +616,9 @@ impl AudioCallback for SquareWave {
                 -self.envelope.volume()
             };
 
-            if self.length_counter.mute() {
-                *x = 0.0;
-            }
+            // if self.length_counter.mute() {
+            //     *x = 0.0;
+            // }
 
             if !self.enabled_sound {
                 *x = 0.0;
