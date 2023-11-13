@@ -65,6 +65,8 @@ cmdで　wsl --update
 
 ### コンパイル、実行
 cargo run
+cargo run --bin <entry point>
+RUST_LOG=info cargo run --bin main
 
 テスト
 cargo test

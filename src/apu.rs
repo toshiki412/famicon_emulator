@@ -1,4 +1,5 @@
 use bitflags::{bitflags, Flags};
+use log::{debug, info, log_enabled, trace, Level};
 use sdl2::audio::{AudioCallback, AudioDevice, AudioSpecDesired};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Duration;
@@ -597,8 +598,20 @@ impl AudioCallback for SquareWave {
                     Ok(SquareEvent::Enable(b)) => self.enabled_sound = b,
                     Ok(SquareEvent::Envelope(envelope)) => self.envelope = envelope,
                     Ok(SquareEvent::EnvelopeTick()) => self.envelope.tick(),
-                    Ok(SquareEvent::LengthCounter(l)) => self.length_counter = l,
-                    Ok(SquareEvent::LengthCounterTick()) => self.length_counter.tick(),
+                    Ok(SquareEvent::LengthCounter(l)) => {
+                        // info!(
+                        //     "OW Length Counter {} {}",
+                        //     self.length_counter.enabled, self.length_counter.count
+                        // );
+                        self.length_counter = l
+                    }
+                    Ok(SquareEvent::LengthCounterTick()) => {
+                        // info!(
+                        //     "Length Counter {} {}",
+                        //     self.length_counter.enabled, self.length_counter.counter
+                        // );
+                        self.length_counter.tick()
+                    }
                     Ok(SquareEvent::Sweep(s)) => self.sweep = s,
                     Ok(SquareEvent::SweepTick()) => self.sweep.tick(&self.length_counter),
                     Ok(SquareEvent::Reset()) => {
@@ -616,9 +629,9 @@ impl AudioCallback for SquareWave {
                 -self.envelope.volume()
             };
 
-            // if self.length_counter.mute() {
-            //     *x = 0.0;
-            // }
+            if self.length_counter.mute() {
+                *x = 0.0;
+            }
 
             if !self.enabled_sound {
                 *x = 0.0;
@@ -1031,18 +1044,19 @@ impl Envelope {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+// 音の鳴る時間
 struct LengthCounter {
     enabled: bool,
-    count: u8, //もとのカウント値
     counter: u8,
+    counter_for_reset: u8, //最初のカウント値。リセット用
 }
 
 impl LengthCounter {
     fn new(enabled: bool, counter: u8) -> Self {
         LengthCounter {
             enabled,
-            counter,
-            count: LENGTH_COUNTER_TABLE[counter as usize],
+            counter: LENGTH_COUNTER_TABLE[counter as usize],
+            counter_for_reset: LENGTH_COUNTER_TABLE[counter as usize],
         }
     }
 
@@ -1057,11 +1071,12 @@ impl LengthCounter {
     }
 
     fn mute(&self) -> bool {
-        (!self.enabled) || self.counter == 0
+        //length counterがenabledじゃなければそもそもmuteにする必要はない
+        self.enabled && (self.counter == 0)
     }
 
     fn reset(&mut self) {
-        self.counter = self.count;
+        self.counter = self.counter_for_reset;
     }
 }
 
