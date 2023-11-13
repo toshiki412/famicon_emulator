@@ -46,7 +46,7 @@ use sdl2::pixels::PixelFormatEnum;
 use sdl2::EventPump;
 
 lazy_static! {
-    pub static ref MAPPER: Mutex<Box<Mapper0>> = Mutex::new(Box::new(Mapper0::new()));
+    pub static ref MAPPER: Mutex<Box<Mapper2>> = Mutex::new(Box::new(Mapper2::new()));
 }
 
 fn main() {
@@ -92,9 +92,8 @@ fn main() {
     key_map.insert(Keycode::S, joypad::JoypadButton::BUTTON_B);
 
     // let rom = load_rom("rom/dragon_quest4.nes"); //mapper1
-    let rom = load_rom("rom/mario.nes"); //mapper0
-    info!("hello");
-    // let rom = load_rom("rom/dragon_quest2.nes"); //mapper2
+    // let rom = load_rom("rom/mario.nes"); //mapper0
+    let rom = load_rom("rom/dragon_quest2.nes"); //mapper2
 
     MAPPER.lock().unwrap().rom = rom;
 
