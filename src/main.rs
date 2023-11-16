@@ -16,8 +16,10 @@ mod render;
 mod rom;
 
 use crate::cpu::{trace, IN_TRACE};
+use crate::rom::Rom;
 
 use log::{debug, info, log_enabled, trace, Level};
+use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
@@ -27,6 +29,7 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 // use crate::mapper::Mapper1;
+use crate::mapper::create_mapper;
 use crate::mapper::Mapper;
 
 use self::bus::{Bus, Mem};
@@ -45,9 +48,8 @@ use sdl2::pixels::Color;
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::EventPump;
 
-lazy_static! {
-    pub static ref MAPPER: Mutex<Box<Mapper1>> = Mutex::new(Box::new(Mapper1::new()));
-}
+static mut MAPPER: Lazy<Mutex<Box<dyn Mapper>>> =
+    Lazy::new(|| Mutex::new(create_mapper(Rom::empty())));
 
 fn main() {
     env_logger::builder()
@@ -91,11 +93,18 @@ fn main() {
     key_map.insert(Keycode::A, joypad::JoypadButton::BUTTON_A);
     key_map.insert(Keycode::S, joypad::JoypadButton::BUTTON_B);
 
-    // let rom = load_rom("rom/mario.nes"); //mapper0
+    // let rom = load_rom("rom/dragon_quest4.nes"); //mapper1
     // let rom = load_rom("rom/dragon_quest2.nes"); //mapper2
-    let rom = load_rom("rom/dragon_quest4.nes"); //mapper1
+    let rom = load_rom("rom/mario.nes"); //mapper0
 
-    MAPPER.lock().unwrap().rom = rom;
+    info!(
+        "ROM: mapper={}, mirroring={:?}, chr_ram={}",
+        rom.mapper, rom.screen_mirroring, rom.is_chr_ram
+    );
+
+    unsafe {
+        *MAPPER = Mutex::new(create_mapper(rom));
+    }
 
     // load_save_data("save.dat");
 
@@ -157,7 +166,7 @@ fn load_save_data(path: &str) {
     let metadata = std::fs::metadata(path).expect("unable to read metadata");
     let mut buffer = vec![0; metadata.len() as usize];
     f.read(&mut buffer).expect("buffer overflow");
-    MAPPER.lock().unwrap().load_prg_ram(&buffer)
+    unsafe { MAPPER.lock().unwrap().load_prg_ram(&buffer) }
 }
 
 fn handle_user_input(cpu: &mut CPU, event_pump: &mut EventPump) {
