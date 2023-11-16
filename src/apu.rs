@@ -156,6 +156,12 @@ impl NesAPU {
             )))
             .unwrap();
 
+        self.ch3_sender
+            .send(TriangleEvent::LinearCounter(LinearCounter::new(
+                self.ch3_register.length,
+            )))
+            .unwrap();
+
         //最後のレジスタに書かれているときはリセット
         if addr == 0x400B {
             self.ch3_sender.send(TriangleEvent::Reset()).unwrap();
@@ -679,6 +685,7 @@ enum TriangleEvent {
     Enable(bool),
     LengthCounter(LengthCounter),
     LengthCounterTick(),
+    LinearCounter(LinearCounter),
     Reset(),
 }
 
@@ -704,6 +711,7 @@ struct TriangleWave {
     note: TriangleNote,
 
     length_counter: LengthCounter,
+    linear_counter: LinearCounter,
 }
 
 impl AudioCallback for TriangleWave {
@@ -719,7 +727,11 @@ impl AudioCallback for TriangleWave {
                     Ok(TriangleEvent::Note(note)) => self.note = note,
                     Ok(TriangleEvent::Enable(b)) => self.enabled_sound = b,
                     Ok(TriangleEvent::LengthCounter(l)) => self.length_counter = l,
-                    Ok(TriangleEvent::LengthCounterTick()) => self.length_counter.tick(),
+                    Ok(TriangleEvent::LengthCounterTick()) => {
+                        self.length_counter.tick();
+                        self.linear_counter.tick();
+                    }
+                    Ok(TriangleEvent::LinearCounter(l)) => self.linear_counter = l,
                     Ok(TriangleEvent::Reset()) => self.length_counter.reset(),
                     Err(_) => break,
                 }
@@ -733,6 +745,10 @@ impl AudioCallback for TriangleWave {
                 * 4.0;
 
             if self.length_counter.mute() {
+                *x = 0.0;
+            }
+
+            if self.linear_counter.mute() {
                 *x = 0.0;
             }
 
@@ -765,6 +781,7 @@ fn init_triangle(sdl_context: &sdl2::Sdl) -> (AudioDevice<TriangleWave>, Sender<
             enabled_sound: true,
             note: TriangleNote::new(),
             length_counter: LengthCounter::new(false, 0),
+            linear_counter: LinearCounter::new(0),
         })
         .unwrap();
 
@@ -1162,5 +1179,35 @@ impl Sweep {
     fn reset(&mut self) {
         self.frequency = self.org_freq;
         self.counter = 0;
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+//LengthCounterのテーブルを見に行かないもの
+struct LinearCounter {
+    counter: u8,
+    counter_for_reset: u8, //最初のカウント値。リセット用
+}
+
+impl LinearCounter {
+    fn new(counter: u8) -> Self {
+        LinearCounter {
+            counter,
+            counter_for_reset: counter,
+        }
+    }
+
+    fn tick(&mut self) {
+        if self.counter > 0 {
+            self.counter -= 1;
+        }
+    }
+
+    fn mute(&self) -> bool {
+        self.counter == 0
+    }
+
+    fn reset(&mut self) {
+        self.counter = self.counter_for_reset;
     }
 }
