@@ -60,8 +60,8 @@ impl NesPPU {
         self.increment_vram_addr();
         match addr {
             0..=0x1FFF => unsafe {
-                if MAPPER.lock().unwrap().is_chr_ram() {
-                    MAPPER.lock().unwrap().write_chr_rom(addr, value);
+                if MAPPER.is_chr_ram() {
+                    MAPPER.write_chr_rom(addr, value);
                 }
             },
             0x2000..=0x2FFF => {
@@ -195,7 +195,7 @@ impl NesPPU {
         match addr {
             0..=0x1FFF => {
                 let result = self.internal_data_buf;
-                self.internal_data_buf = unsafe { MAPPER.lock().unwrap().read_chr_rom(addr) };
+                self.internal_data_buf = unsafe { MAPPER.read_chr_rom(addr) };
                 result
             }
             0x2000..=0x2FFF => {
@@ -227,7 +227,7 @@ impl NesPPU {
         // to the name table index
         let name_table = vram_index / 0x400;
 
-        let mirroring = unsafe { MAPPER.lock().unwrap().mirroring() };
+        let mirroring = unsafe { MAPPER.mirroring() };
 
         match (&mirroring, name_table) {
             (Mirroring::VERTICAL, 2) => vram_index - 0x800,

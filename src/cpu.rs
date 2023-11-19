@@ -289,7 +289,8 @@ impl<'a> CPU<'a> {
             let opscode = self.mem_read(self.program_counter);
             self.program_counter += 1;
 
-            let op = self.find_ops(opscode);
+            // let op = self.find_ops(opscode);
+            let op = CPU_OPS_CODES.get(&opscode);
             match op {
                 Some(op) => {
                     self.add_cycles = 0;
@@ -346,15 +347,6 @@ impl<'a> CPU<'a> {
         // $FFFE/F の IRQ 割り込みベクトルが PC にロードされ、ステータスのブレーク フラグが 1 に設定されます。
         self.program_counter = self.mem_read_u16(0xFFFE);
         self.status = self.status | FLAG_BREAK;
-    }
-
-    fn find_ops(&mut self, opscode: u8) -> Option<OpCode> {
-        for op in CPU_OPS_CODES.iter() {
-            if op.code == opscode {
-                return Some(op.clone());
-            }
-        }
-        return None;
     }
 
     pub fn shs(&mut self, mode: &AddressingMode) {
@@ -987,7 +979,7 @@ pub fn trace(cpu: &mut CPU) -> String {
     let program_counter = cpu.program_counter - 1;
     let pc = format!("{:<04X}", program_counter);
     let op = cpu.mem_read(program_counter);
-    let ops = cpu.find_ops(op).unwrap();
+    let ops = CPU_OPS_CODES.get(&op).unwrap();
     let mut args: Vec<u8> = vec![];
     for n in 1..ops.bytes {
         let arg = cpu.mem_read(program_counter + n);

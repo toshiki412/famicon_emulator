@@ -104,10 +104,10 @@ impl Mem for Bus<'_> {
             0x4016 => self.joypad1.read(),
             0x4017 => 0,
 
-            0x6000..=0x7FFF => unsafe { MAPPER.lock().unwrap().read_prg_ram(addr) },
+            0x6000..=0x7FFF => unsafe { MAPPER.read_prg_ram(addr) },
 
             PRG_ROM..=PRG_ROM_END => {
-                unsafe { MAPPER.lock().unwrap().read_prg_rom(addr) }
+                unsafe { MAPPER.read_prg_rom(addr) }
                 // self.read_prg_rom(addr)
             }
 
@@ -186,10 +186,10 @@ impl Mem for Bus<'_> {
                 info!("WRITE ACCESS 0x4017. {:02X}", data);
             }
 
-            0x6000..=0x7FFF => unsafe { MAPPER.lock().unwrap().write_prg_ram(addr, data) },
+            0x6000..=0x7FFF => unsafe { MAPPER.write_prg_ram(addr, data) },
 
             PRG_ROM..=PRG_ROM_END => unsafe {
-                MAPPER.lock().unwrap().write(addr, data);
+                MAPPER.write(addr, data);
             },
 
             _ => {
