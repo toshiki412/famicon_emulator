@@ -1,6 +1,3 @@
-#[macro_use] //マクロはメインに書かなきゃいけない
-extern crate lazy_static;
-
 //モジュールのインポートはメインに書かなきゃいけない
 mod apu;
 mod bus;
@@ -48,8 +45,7 @@ use sdl2::pixels::Color;
 use sdl2::pixels::PixelFormatEnum;
 use sdl2::EventPump;
 
-static mut MAPPER: Lazy<Mutex<Box<dyn Mapper>>> =
-    Lazy::new(|| Mutex::new(create_mapper(Rom::empty())));
+static mut MAPPER: Lazy<Box<dyn Mapper>> = Lazy::new(|| create_mapper(Rom::empty()));
 
 fn main() {
     env_logger::builder()
@@ -93,9 +89,12 @@ fn main() {
     key_map.insert(Keycode::A, joypad::JoypadButton::BUTTON_A);
     key_map.insert(Keycode::S, joypad::JoypadButton::BUTTON_B);
 
-    // let rom = load_rom("rom/dragon_quest4.nes"); //mapper1
-    // let rom = load_rom("rom/dragon_quest2.nes"); //mapper2
-    let rom = load_rom("rom/mario.nes"); //mapper0
+    //mapper0
+    // let rom = load_rom("rom/mario.nes");
+    //mapper1
+    // let rom = load_rom("rom/dragon_quest4.nes");
+    //mapper2
+    let rom = load_rom("rom/dragon_quest2.nes");
 
     info!(
         "ROM: mapper={}, mirroring={:?}, chr_ram={}",
@@ -103,7 +102,7 @@ fn main() {
     );
 
     unsafe {
-        *MAPPER = Mutex::new(create_mapper(rom));
+        *MAPPER = create_mapper(rom);
     }
 
     // load_save_data("save.dat");
@@ -166,7 +165,7 @@ fn load_save_data(path: &str) {
     let metadata = std::fs::metadata(path).expect("unable to read metadata");
     let mut buffer = vec![0; metadata.len() as usize];
     f.read(&mut buffer).expect("buffer overflow");
-    unsafe { MAPPER.lock().unwrap().load_prg_ram(&buffer) }
+    unsafe { MAPPER.load_prg_ram(&buffer) }
 }
 
 fn handle_user_input(cpu: &mut CPU, event_pump: &mut EventPump) {
