@@ -96,7 +96,9 @@ fn main() {
     //mapper2
     // let rom = load_rom("rom/dragon_quest2.nes");
     //mapper3
-    let rom = load_rom("rom/dragon_quest1.nes");
+    // let rom = load_rom("rom/dragon_quest1.nes");
+    //mapper4
+    let rom = load_rom("rom/finalfantasy3.nes");
 
     info!(
         "ROM: mapper={}, mirroring={:?}, chr_ram={}",
