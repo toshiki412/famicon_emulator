@@ -34,6 +34,9 @@ pub trait Mapper: Send {
     fn read_prg_rom(&self, addr: u16) -> u8;
     fn write_chr_rom(&mut self, addr: u16, value: u8);
     fn read_chr_rom(&self, addr: u16) -> u8;
+
+    fn scanline(&mut self, scanline: usize, show_background: bool);
+    fn is_irq(&mut self) -> bool;
 }
 
 pub struct Mapper0 {
@@ -78,6 +81,10 @@ impl Mapper for Mapper0 {
     fn write_chr_rom(&mut self, _addr: u16, _value: u8) {}
     fn read_chr_rom(&self, addr: u16) -> u8 {
         self.rom.chr_rom[addr as usize]
+    }
+    fn scanline(&mut self, scanline: usize, show_background: bool) {}
+    fn is_irq(&mut self) -> bool {
+        false
     }
 }
 
@@ -267,6 +274,10 @@ impl Mapper for Mapper1 {
     fn read_chr_rom(&self, addr: u16) -> u8 {
         self.rom.chr_rom[addr as usize]
     }
+    fn scanline(&mut self, scanline: usize, show_background: bool) {}
+    fn is_irq(&mut self) -> bool {
+        false
+    }
 }
 
 pub struct Mapper2 {
@@ -327,6 +338,10 @@ impl Mapper for Mapper2 {
     fn read_chr_rom(&self, addr: u16) -> u8 {
         self.rom.chr_rom[addr as usize]
     }
+    fn scanline(&mut self, scanline: usize, show_background: bool) {}
+    fn is_irq(&mut self) -> bool {
+        false
+    }
 }
 
 pub struct Mapper3 {
@@ -375,6 +390,10 @@ impl Mapper for Mapper3 {
         let bank = self.bank_select & 0x03; //最下位2bit
         self.rom.chr_rom[(addr as usize + bank_size * bank as usize) as usize]
     }
+    fn scanline(&mut self, scanline: usize, show_background: bool) {}
+    fn is_irq(&mut self) -> bool {
+        false
+    }
 }
 
 pub struct Mapper4 {
@@ -385,8 +404,10 @@ pub struct Mapper4 {
     mirroring: u8,
     prg_ram_protect: u8,
     irq_latch: u8,
+    irq_latch_counter: u8,
     irq_reload: bool,
     irq_enable: bool,
+    is_irq: bool,
 }
 
 impl Mapper4 {
@@ -399,8 +420,10 @@ impl Mapper4 {
             mirroring: 0,
             prg_ram_protect: 0,
             irq_latch: 0,
+            irq_latch_counter: 0,
             irq_reload: false,
             irq_enable: false,
+            is_irq: false,
         }
     }
     fn get_chr_rom_addr(&self, addr: u16) -> usize {
@@ -447,7 +470,6 @@ impl Mapper4 {
 
 impl Mapper for Mapper4 {
     fn is_chr_ram(&mut self) -> bool {
-        info!("is chr ram {}", self.rom.is_chr_ram);
         self.rom.is_chr_ram
     }
     fn set_rom(&mut self, rom: Rom) {
@@ -480,9 +502,11 @@ impl Mapper for Mapper4 {
                 if addr & 0x0001 == 0 {
                     // IRQ ラッチ
                     self.irq_latch = data;
+                    self.irq_latch_counter = data;
                 } else {
                     // IRQ リロード
                     self.irq_reload = true;
+                    self.irq_latch_counter = 0;
                 }
             }
 
@@ -490,6 +514,7 @@ impl Mapper for Mapper4 {
                 if addr & 0x0001 == 0 {
                     // IRQ 無効化
                     self.irq_enable = false;
+                    self.is_irq = false;
                 } else {
                     // IRQ enable
                     self.irq_enable = true;
@@ -578,5 +603,26 @@ impl Mapper for Mapper4 {
 
     fn read_chr_rom(&self, addr: u16) -> u8 {
         self.rom.chr_rom[self.get_chr_rom_addr(addr) as usize]
+    }
+
+    fn scanline(&mut self, scanline: usize, show_bkgd_or_sprt: bool) {
+        if scanline <= 240 && show_bkgd_or_sprt {
+            if self.irq_latch_counter == 0 || self.irq_reload {
+                self.irq_latch_counter = self.irq_latch;
+                self.irq_reload = false;
+            } else {
+                self.irq_latch_counter -= 1;
+            }
+
+            if self.irq_latch_counter == 0 && self.irq_enable {
+                self.is_irq = true;
+            }
+        }
+    }
+
+    fn is_irq(&mut self) -> bool {
+        let res = self.is_irq;
+        self.is_irq = false;
+        res
     }
 }

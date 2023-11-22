@@ -1,4 +1,7 @@
-use crate::opscodes::{call, CPU_OPS_CODES};
+use crate::{
+    opscodes::{call, CPU_OPS_CODES},
+    MAPPER,
+};
 use log::{debug, info, trace};
 
 use crate::bus::{Bus, Mem};
@@ -282,8 +285,12 @@ impl<'a> CPU<'a> {
                 self.interrupt_nmi();
             }
 
+            // apuのirqを優先
             if self.bus.poll_apu_irq() {
-                self.apu_irq();
+                self.call_irq();
+            } else if unsafe { MAPPER.is_irq() } {
+                //ここで呼び出すIRQはAPUではなくPPUのものだが、IRQを呼び出す処理は同じ(FFFE固定)
+                self.call_irq();
             }
 
             let opscode = self.mem_read(self.program_counter);
@@ -335,7 +342,7 @@ impl<'a> CPU<'a> {
         self.program_counter = self.mem_read_u16(0xFFFA);
     }
 
-    fn apu_irq(&mut self) {
+    fn call_irq(&mut self) {
         // FLAG_INTERRUPTが立っている場合は
         if self.status & FLAG_INTERRRUPT != 0 {
             return;
