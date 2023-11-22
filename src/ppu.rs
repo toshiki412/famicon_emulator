@@ -275,6 +275,13 @@ impl NesPPU {
             self.cycles = self.cycles - 341;
             self.scanline += 1;
 
+            unsafe {
+                MAPPER.scanline(
+                    self.scanline,
+                    self.mask.show_background() || self.mask.show_sprites(),
+                )
+            }
+
             //0~262lineのうち241~は画面外
             if self.scanline == 241 {
                 self.status.set_vblank_status(true);
@@ -310,66 +317,7 @@ impl NesPPU {
     }
 }
 
-pub struct AddrRegister {
-    value: (u8, u8),
-    hi_ptr: bool,
-}
-
-impl AddrRegister {
-    pub fn new() -> Self {
-        AddrRegister {
-            value: (0, 0),
-            hi_ptr: true,
-        }
-    }
-
-    fn set(&mut self, data: u16) {
-        self.value.0 = (data >> 8) as u8;
-        self.value.1 = (data & 0xFF) as u8;
-    }
-
-    //LDAで読み込む動作一回分
-    //2回やるとloとhiのどちらにも書き込まれる
-    pub fn update(&mut self, data: u8) {
-        if self.hi_ptr {
-            self.value.0 = data;
-        } else {
-            self.value.1 = data;
-        }
-
-        // ミラーリング
-        if self.get() > 0x3FFF {
-            self.set(self.get() & 0b11_1111_1111_1111);
-        }
-        self.hi_ptr = !self.hi_ptr;
-    }
-
-    pub fn increment(&mut self, inc: u8) {
-        let lo = self.value.1;
-        self.value.1 = self.value.1.wrapping_add(inc);
-
-        //桁上がりの処理
-        if lo > self.value.1 {
-            self.value.0 = self.value.0.wrapping_add(1);
-        }
-
-        // ミラーリング
-        if self.get() > 0x3FFF {
-            self.set(self.get() & 0b11_1111_1111_1111);
-        }
-    }
-
-    //一回しかLDAしなかったときのためにリセットをかける
-    pub fn reset_latch(&mut self) {
-        self.hi_ptr = true;
-    }
-
-    // hiとloを一つにする
-    pub fn get(&self) -> u16 {
-        ((self.value.0 as u16) << 8) | (self.value.1 as u16)
-    }
-}
-
+// 0x2000
 bitflags! {
     pub struct ControlRegister: u8 {
         const NAMETABLE1                = 0b0000_0001;
@@ -437,6 +385,39 @@ impl ControlRegister {
     }
 }
 
+// 0x2001
+bitflags! {
+    pub struct MaskRegister: u8 {
+        const GRAYSCALE                 = 0b0000_0001;
+        const SHOW_BACKGROUND_IN_LEFT   = 0b0000_0010;
+        const SHOW_SPRITES_IN_LEFT      = 0b0000_0100;
+        const SHOW_BACKGROUND           = 0b0000_1000;
+        const SHOW_SPRITES              = 0b0001_0000;
+        const EMPHASIZE_RED             = 0b0010_0000;
+        const EMPHASIZE_GREEN           = 0b0100_0000;
+        const EMPHASIZE_BLUE            = 0b1000_0000;
+    }
+}
+
+impl MaskRegister {
+    pub fn new() -> Self {
+        MaskRegister::from_bits_truncate(0b0000_0000)
+    }
+
+    pub fn show_sprites(&self) -> bool {
+        self.contains(MaskRegister::SHOW_SPRITES)
+    }
+
+    pub fn show_background(&self) -> bool {
+        self.contains(MaskRegister::SHOW_BACKGROUND)
+    }
+
+    pub fn update(&mut self, data: u8) {
+        *self.0.bits_mut() = data;
+    }
+}
+
+// 0x2002
 bitflags! {
     pub struct StatusRegister: u8 {
         const PPU_OPEN_BUS1       = 0b0000_0001;
@@ -476,33 +457,7 @@ impl StatusRegister {
     }
 }
 
-bitflags! {
-    pub struct MaskRegister: u8 {
-        const GRAYSCALE                 = 0b0000_0001;
-        const SHOW_BACKGROUND_IN_LEFT   = 0b0000_0010;
-        const SHOW_SPRITES_IN_LEFT      = 0b0000_0100;
-        const SHOW_BACKGROUND           = 0b0000_1000;
-        const SHOW_SPRITES              = 0b0001_0000;
-        const EMPHASIZE_RED             = 0b0010_0000;
-        const EMPHASIZE_GREEN           = 0b0100_0000;
-        const EMPHASIZE_BLUE            = 0b1000_0000;
-    }
-}
-
-impl MaskRegister {
-    pub fn new() -> Self {
-        MaskRegister::from_bits_truncate(0b0000_0000)
-    }
-
-    pub fn show_sprites(&self) -> bool {
-        self.contains(MaskRegister::SHOW_SPRITES)
-    }
-
-    pub fn update(&mut self, data: u8) {
-        *self.0.bits_mut() = data;
-    }
-}
-
+// 0x2005
 pub struct ScrollRegister {
     pub scroll_x: u8,
     pub scroll_y: u8,
@@ -530,5 +485,66 @@ impl ScrollRegister {
     //一回しかLDAしなかったときのためにリセットをかける
     pub fn reset(&mut self) {
         self.write_x = true;
+    }
+}
+
+// 0x2006
+pub struct AddrRegister {
+    value: (u8, u8),
+    hi_ptr: bool,
+}
+
+impl AddrRegister {
+    pub fn new() -> Self {
+        AddrRegister {
+            value: (0, 0),
+            hi_ptr: true,
+        }
+    }
+
+    fn set(&mut self, data: u16) {
+        self.value.0 = (data >> 8) as u8;
+        self.value.1 = (data & 0xFF) as u8;
+    }
+
+    //LDAで読み込む動作一回分
+    //2回やるとloとhiのどちらにも書き込まれる
+    pub fn update(&mut self, data: u8) {
+        if self.hi_ptr {
+            self.value.0 = data;
+        } else {
+            self.value.1 = data;
+        }
+
+        // ミラーリング
+        if self.get() > 0x3FFF {
+            self.set(self.get() & 0b11_1111_1111_1111);
+        }
+        self.hi_ptr = !self.hi_ptr;
+    }
+
+    pub fn increment(&mut self, inc: u8) {
+        let lo = self.value.1;
+        self.value.1 = self.value.1.wrapping_add(inc);
+
+        //桁上がりの処理
+        if lo > self.value.1 {
+            self.value.0 = self.value.0.wrapping_add(1);
+        }
+
+        // ミラーリング
+        if self.get() > 0x3FFF {
+            self.set(self.get() & 0b11_1111_1111_1111);
+        }
+    }
+
+    //一回しかLDAしなかったときのためにリセットをかける
+    pub fn reset_latch(&mut self) {
+        self.hi_ptr = true;
+    }
+
+    // hiとloを一つにする
+    pub fn get(&self) -> u16 {
+        ((self.value.0 as u16) << 8) | (self.value.1 as u16)
     }
 }
