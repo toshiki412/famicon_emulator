@@ -1,4 +1,5 @@
 use crate::rom::{Mirroring, Rom};
+use log::{debug, info, trace};
 use std::{
     fs::File,
     io::{self, BufReader, Write},
@@ -184,6 +185,7 @@ impl Mapper for Mapper1 {
     }
 
     fn write_prg_ram(&mut self, addr: u16, data: u8) {
+        // prg_ramは6000から始まる
         self.prg_ram[addr as usize - 0x6000] = data;
 
         //FIXME 保存処理
@@ -377,6 +379,7 @@ impl Mapper for Mapper3 {
 
 pub struct Mapper4 {
     pub rom: Rom,
+    prg_ram: Vec<u8>,
     bank_select: u8,
     bank_data: [u8; 8],
     mirroring: u8,
@@ -390,6 +393,7 @@ impl Mapper4 {
     pub fn new() -> Self {
         Mapper4 {
             rom: Rom::empty(),
+            prg_ram: vec![0xFF; 8192], //8kiB
             bank_select: 0,
             bank_data: [0; 8],
             mirroring: 0,
@@ -399,10 +403,51 @@ impl Mapper4 {
             irq_enable: false,
         }
     }
+    fn get_chr_rom_addr(&self, addr: u16) -> usize {
+        let bank_size = 1 * 1024 as usize; //1kiB
+
+        let mode = self.bank_select & 0x80;
+        let r0_bank = self.bank_data[0] as usize;
+        let r1_bank = self.bank_data[1] as usize;
+        let r2_bank = self.bank_data[2] as usize;
+        let r3_bank = self.bank_data[3] as usize;
+        let r4_bank = self.bank_data[4] as usize;
+        let r5_bank = self.bank_data[5] as usize;
+
+        match mode {
+            0 => match addr {
+                // 0x0000..=0x03FF
+                // 0x0400..=0x07FF
+                0x0000..=0x07FF => addr as usize + r0_bank * bank_size,
+                // 0x0800..=0x0BFF
+                // 0x0C00..=0x0FFF
+                0x0800..=0x0FFF => (addr as usize - 0x0800) + r1_bank * bank_size,
+                0x1000..=0x13FF => (addr as usize - 0x1000) + r2_bank * bank_size,
+                0x1400..=0x17FF => (addr as usize - 0x1400) + r3_bank * bank_size,
+                0x1800..=0x1BFF => (addr as usize - 0x1800) + r4_bank * bank_size,
+                0x1C00..=0x1FFF => (addr as usize - 0x1C00) + r5_bank * bank_size,
+                _ => panic!("cant be"),
+            },
+            _ => match addr {
+                0x0000..=0x03FF => addr as usize + r2_bank * bank_size,
+                0x0400..=0x07FF => (addr as usize - 0x0400) + r3_bank * bank_size,
+                0x0800..=0x0BFF => (addr as usize - 0x0800) + r4_bank * bank_size,
+                0x0C00..=0x0FFF => (addr as usize - 0x0C00) + r5_bank * bank_size,
+                // 0x1000..=0x13FF
+                // 0x1400..=0x17FF
+                0x1000..=0x17FF => (addr as usize - 0x1000) + r0_bank * bank_size,
+                // 0x1800..=0x1BFF
+                // 0x1C00..=0x1FFF
+                0x1800..=0x1FFF => (addr as usize - 0x1800) + r1_bank * bank_size,
+                _ => panic!("cant be"),
+            },
+        }
+    }
 }
 
 impl Mapper for Mapper4 {
     fn is_chr_ram(&mut self) -> bool {
+        info!("is chr ram {}", self.rom.is_chr_ram);
         self.rom.is_chr_ram
     }
     fn set_rom(&mut self, rom: Rom) {
@@ -462,11 +507,23 @@ impl Mapper for Mapper4 {
             Mirroring::HORIZONTAL
         }
     }
-    fn write_prg_ram(&mut self, _addr: u16, _data: u8) {}
-    fn read_prg_ram(&self, _addr: u16) -> u8 {
-        0
+    fn write_prg_ram(&mut self, addr: u16, data: u8) {
+        // prg_ramは6000から始まる
+        self.prg_ram[addr as usize - 0x6000] = data;
+
+        //FIXME 保存処理
+        let mut file = File::create("save.dat").unwrap();
+        file.write_all(&self.prg_ram).unwrap();
+        file.flush().unwrap();
     }
-    fn load_prg_ram(&mut self, _raw: &Vec<u8>) {}
+
+    fn read_prg_ram(&self, addr: u16) -> u8 {
+        self.prg_ram[addr as usize - 0x6000]
+    }
+
+    fn load_prg_ram(&mut self, raw: &Vec<u8>) {
+        self.prg_ram = raw.to_vec()
+    }
 
     fn read_prg_rom(&self, addr: u16) -> u8 {
         let bank_size = 8 * 1024 as usize; //8kiB
@@ -515,46 +572,11 @@ impl Mapper for Mapper4 {
     }
 
     fn write_chr_rom(&mut self, addr: u16, value: u8) {
-        self.rom.chr_rom[addr as usize] = value;
+        let mirror_addr = self.get_chr_rom_addr(addr) as usize;
+        self.rom.chr_rom[mirror_addr] = value;
     }
+
     fn read_chr_rom(&self, addr: u16) -> u8 {
-        let bank_size = 1 * 1024 as usize; //1kiB
-
-        let mode = self.bank_select & 0x80;
-        let r0_bank = self.bank_data[0] as usize;
-        let r1_bank = self.bank_data[1] as usize;
-        let r2_bank = self.bank_data[2] as usize;
-        let r3_bank = self.bank_data[3] as usize;
-        let r4_bank = self.bank_data[4] as usize;
-        let r5_bank = self.bank_data[5] as usize;
-
-        match mode {
-            0 => match addr {
-                // 0x0000..=0x03FF
-                // 0x0400..=0x07FF
-                0x0000..=0x07FF => self.rom.chr_rom[addr as usize + r0_bank * bank_size],
-                // 0x0800..=0x0BFF
-                // 0x0C00..=0x0FFF
-                0x0800..=0x0FFF => self.rom.chr_rom[(addr - 0x0800) as usize + r1_bank * bank_size],
-                0x1000..=0x13FF => self.rom.chr_rom[(addr - 0x1000) as usize + r2_bank * bank_size],
-                0x1400..=0x17FF => self.rom.chr_rom[(addr - 0x1400) as usize + r3_bank * bank_size],
-                0x1800..=0x1BFF => self.rom.chr_rom[(addr - 0x1800) as usize + r4_bank * bank_size],
-                0x1C00..=0x1FFF => self.rom.chr_rom[(addr - 0x1C00) as usize + r5_bank * bank_size],
-                _ => panic!("cant be"),
-            },
-            _ => match addr {
-                0x0000..=0x03FF => self.rom.chr_rom[addr as usize + r2_bank * bank_size],
-                0x0400..=0x07FF => self.rom.chr_rom[(addr - 0x0400) as usize + r3_bank * bank_size],
-                0x0800..=0x0BFF => self.rom.chr_rom[(addr - 0x0800) as usize + r4_bank * bank_size],
-                0x0C00..=0x0FFF => self.rom.chr_rom[(addr - 0x0C00) as usize + r5_bank * bank_size],
-                // 0x1000..=0x13FF
-                // 0x1400..=0x17FF
-                0x1000..=0x17FF => self.rom.chr_rom[(addr - 0x1000) as usize + r0_bank * bank_size],
-                // 0x1800..=0x1BFF
-                // 0x1C00..=0x1FFF
-                0x1800..=0x1FFF => self.rom.chr_rom[(addr - 0x1800) as usize + r1_bank * bank_size],
-                _ => panic!("cant be"),
-            },
-        }
+        self.rom.chr_rom[self.get_chr_rom_addr(addr) as usize]
     }
 }

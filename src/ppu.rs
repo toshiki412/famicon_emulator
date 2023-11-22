@@ -1,6 +1,7 @@
 use crate::mapper::Mapper;
 use crate::{rom::Mirroring, MAPPER};
 use bitflags::bitflags;
+use log::{debug, info, trace};
 
 pub struct NesPPU {
     pub palette_table: [u8; 32], //色の情報
@@ -58,8 +59,11 @@ impl NesPPU {
     pub fn write_to_data(&mut self, value: u8) {
         let addr = self.addr.get();
         self.increment_vram_addr();
+        debug!("WRITE PPU: {:04X} => {:02X}", addr, value);
+
         match addr {
             0..=0x1FFF => unsafe {
+                debug!("write CHR_ROM {:04X} => {:02X}", addr, value);
                 if MAPPER.is_chr_ram() {
                     MAPPER.write_chr_rom(addr, value);
                 }
@@ -71,8 +75,26 @@ impl NesPPU {
                 // FIXME
                 self.vram[self.mirror_vram_addr(addr) as usize] = value;
             }
-            0x3F00..=0x3F1F => self.write_palette_table(addr, value),
-            0x3F20..=0x3FFF => self.write_palette_table(addr, value),
+            0x3F00..=0x3F1F => {
+                debug!(
+                    "WRITE PALATTE {:04X} {:02X} => ({:02X}) SL={}",
+                    addr,
+                    self.mirror_palette_addr(addr) as usize,
+                    value,
+                    self.scanline
+                );
+                self.write_palette_table(addr, value)
+            }
+            0x3F20..=0x3FFF => {
+                debug!(
+                    "WRITE PALATTE MIRROR {:04X} {:02X} => ({:02X}) SL={}",
+                    addr,
+                    self.mirror_palette_addr(addr) as usize,
+                    value,
+                    self.scanline
+                );
+                self.write_palette_table(addr, value)
+            }
             _ => panic!("unexpected access to mirrored space {}", addr),
         }
     }
@@ -168,6 +190,7 @@ impl NesPPU {
     }
 
     pub fn write_to_oam_data(&mut self, value: u8) {
+        debug!("OAM: {:04X} => {:02X}", self.oam_addr, value);
         self.oam_data[self.oam_addr as usize] = value;
         self.oam_addr = self.oam_addr.wrapping_add(1)
     }
@@ -177,6 +200,8 @@ impl NesPPU {
     }
 
     pub fn write_to_oam_dma(&mut self, values: [u8; 256]) {
+        debug!("OAM DMA: ADDR:{:02X}", self.oam_addr);
+        debug!("{:?}", values);
         self.oam_data = values;
     }
 
@@ -191,6 +216,7 @@ impl NesPPU {
     pub fn read_data(&mut self) -> u8 {
         let addr = self.addr.get();
         self.increment_vram_addr();
+        debug!("READ PPU: {:04X}", addr);
 
         match addr {
             0..=0x1FFF => {

@@ -220,8 +220,8 @@ impl<'a> CPU<'a> {
 
     //指定したアドレス(pos)から2バイト(16bit)のデータを読む関数
     pub fn mem_read_u16(&mut self, pos: u16) -> u16 {
-        // FIXME ページ境界
         if pos == 0xFF || pos == 0x02FF {
+            debug!("mem_read_u16 page boundary. {:04X}", pos);
             let lo = self.mem_read(pos) as u16;
             let hi = self.mem_read(pos & 0xFF00) as u16;
             return (hi << 8) | (lo as u16);
@@ -323,6 +323,7 @@ impl<'a> CPU<'a> {
 
     //割り込み処理
     fn interrupt_nmi(&mut self) {
+        debug!("** INTERRUPT_NMI **");
         self._push_u16(self.program_counter);
         let mut status = self.status;
         status = status & !FLAG_BREAK;
