@@ -67,6 +67,7 @@ cmdで　wsl --update
 cargo run
 cargo run --bin <entry point>
 RUST_LOG=info cargo run --bin main
+RUST_LOG=debug cargo run --bin main
 
 テスト
 cargo test

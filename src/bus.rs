@@ -3,7 +3,7 @@ use crate::joypad::Joypad;
 use crate::mapper::Mapper;
 use crate::ppu::NesPPU;
 use crate::MAPPER;
-use log::{debug, error, info, log_enabled, trace, warn, Level};
+use log::{debug, info, trace};
 
 pub struct Bus<'call> {
     cpu_vram: [u8; 2048],
@@ -97,6 +97,7 @@ impl Mem for Bus<'_> {
             0x2007 => self.ppu.read_data(),
             0x2008..=PPU_REGISTERS_MIRRORS_END => {
                 let mirror_down_addr = addr & 0b00100000_00000111;
+                debug!("READ PPU MIRROR: {:04X} => {:04X}", addr, mirror_down_addr);
                 self.mem_read(mirror_down_addr)
             }
 
