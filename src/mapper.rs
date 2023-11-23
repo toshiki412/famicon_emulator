@@ -502,7 +502,6 @@ impl Mapper for Mapper4 {
                 if addr & 0x0001 == 0 {
                     // IRQ ラッチ
                     self.irq_latch = data;
-                    self.irq_latch_counter = data;
                 } else {
                     // IRQ リロード
                     self.irq_reload = true;

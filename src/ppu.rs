@@ -1,4 +1,5 @@
-use crate::mapper::Mapper;
+use crate::frame::Frame;
+use crate::render::{self, render};
 use crate::{rom::Mirroring, MAPPER};
 use bitflags::bitflags;
 use log::{debug, info, trace};
@@ -265,7 +266,7 @@ impl NesPPU {
         }
     }
 
-    pub fn tick(&mut self, cycles: u8) -> bool {
+    pub fn tick(&mut self, cycles: u8, frame: &mut Frame) -> bool {
         self.cycles += cycles as usize;
         //画面一列で341サイクル
         if self.cycles >= 341 {
@@ -274,6 +275,12 @@ impl NesPPU {
             }
             self.cycles = self.cycles - 341;
             self.scanline += 1;
+
+            // 1タイル分見終わったときここでrenderで描画する
+            // NOTE 描画は1タイルずつ行う
+            if self.scanline % 8 == 0 {
+                render(&self, frame, self.scanline);
+            }
 
             unsafe {
                 MAPPER.scanline(
