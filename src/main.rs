@@ -21,7 +21,6 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::io::Write;
-use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
@@ -36,7 +35,6 @@ use cartrige::load_rom;
 use joypad::Joypad;
 
 use frame::Frame;
-use mapper::{Mapper0, Mapper1, Mapper2};
 use ppu::NesPPU;
 // initialize SDL
 use sdl2::event::Event;
@@ -68,7 +66,7 @@ fn main() {
         .build()
         .unwrap();
 
-    let mut canvas = window.into_canvas().present_vsync().build().unwrap();
+    let mut canvas = window.into_canvas().build().unwrap();
     let mut event_pump = sdl_context.event_pump().unwrap();
     // canvas.set_scale(10.0, 10.0).unwrap();
     canvas.set_scale(2.0, 2.0).unwrap();
