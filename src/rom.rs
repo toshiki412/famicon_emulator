@@ -25,12 +25,12 @@ impl Rom {
             return Err("File is not in iNes file format".to_string());
         }
 
+        // Nes2.0のファイル形式の7番目と6番目のヘッダにマッパの情報がある
         let mapper = (raw[7] & 0b1111_0000) | (raw[6] >> 4);
-
-        // let ines_ver = (raw[7] >> 2) & 0b11;
-        // if ines_ver != 0 {
-        //     return Err("NES2.0 format is not supported".to_string());
-        // }
+        // ex) raw[7] = 10101010, raw[6] = 11110000のとき
+        // raw[7] & 0b1111_0000 => 1010_0000
+        // raw[6] >> 4 => 0000_1111
+        // mapper = 1010_1111
 
         let four_screen = raw[6] & 0b1000 != 0;
         let vertical_mirroring = raw[6] & 0b1 != 0;

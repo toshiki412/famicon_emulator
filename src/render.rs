@@ -1,5 +1,4 @@
 use crate::frame::Frame;
-use crate::mapper::Mapper;
 use crate::ppu::NesPPU;
 use crate::rom::Mirroring;
 use crate::{palette, MAPPER};
@@ -22,75 +21,96 @@ impl Rect {
     }
 }
 
-pub fn render(ppu: &NesPPU, frame: &mut Frame) {
+pub fn render(ppu: &NesPPU, frame: &mut Frame, scanline: usize) {
     //draw background
+    // scroll_x, scroll_yは実際の画面に描画するピクセルの座標のこと
     let scroll_x = (ppu.scroll.scroll_x) as usize;
     let scroll_y = (ppu.scroll.scroll_y) as usize;
+
+    // mirroringはミラーリングのモード
     let mirroring = unsafe { MAPPER.mirroring() };
 
-    let (main_name_table, second_name_table) = match (&mirroring, ppu.ctrl.name_table_addr()) {
-        (Mirroring::VERTICAL, 0x2000) | (Mirroring::VERTICAL, 0x2800) => {
-            (&ppu.vram[0x000..0x400], &ppu.vram[0x400..0x800])
-        }
+    // vram_a, vram_bはA,B画面に表示する情報のこと
+    let vram_a = &ppu.vram[0x000..0x400];
+    let vram_b = &ppu.vram[0x400..0x800];
 
-        (Mirroring::VERTICAL, 0x2400) | (Mirroring::VERTICAL, 0x2C00) => {
-            (&ppu.vram[0x400..0x800], &ppu.vram[0x000..0x400])
-        }
+    /*
+       vertical     horizontal     screen
+       A  B         A  A           0x2000~0x23FF  0x2400~0x27FF
+       A  B         B  B           0x2800~0x2BFF  0x2C00~0x2FFF
+    */
+    let (top_left, top_right, bottom_left, bottom_right) =
+        match (&mirroring, ppu.ctrl.name_table_addr()) {
+            (Mirroring::VERTICAL, 0x2000) | (Mirroring::VERTICAL, 0x2800) => {
+                (vram_a, vram_b, vram_a, vram_b)
+            }
 
-        (Mirroring::HORIZONTAL, 0x2000) | (Mirroring::HORIZONTAL, 0x2400) => {
-            (&ppu.vram[0x000..0x400], &ppu.vram[0x0400..0x800])
-        }
+            (Mirroring::VERTICAL, 0x2400) | (Mirroring::VERTICAL, 0x2C00) => {
+                (vram_b, vram_a, vram_b, vram_a)
+            }
 
-        (Mirroring::HORIZONTAL, 0x2800) | (Mirroring::HORIZONTAL, 0x2C00) => {
-            (&ppu.vram[0x400..0x800], &ppu.vram[0x000..0x400])
-        }
+            (Mirroring::HORIZONTAL, 0x2000) | (Mirroring::HORIZONTAL, 0x2400) => {
+                (vram_a, vram_a, vram_b, vram_b)
+            }
 
-        (_, _) => {
-            panic!("Not supported mirroring type {:?}", mirroring);
-        }
-    };
+            (Mirroring::HORIZONTAL, 0x2800) | (Mirroring::HORIZONTAL, 0x2C00) => {
+                (vram_b, vram_b, vram_a, vram_a)
+            }
+
+            (_, _) => {
+                panic!("Not supported mirroring type {:?}", mirroring);
+            }
+        };
 
     let screen_w = 256;
     let screen_h = 240;
+
+    // 描画範囲
+    // 左上から１行描画し、下に8pixelずつ
+    let draw_rect = Rect::new(0, scanline - 8, screen_w, scanline);
 
     //画面左上
     render_name_table(
         ppu,
         frame,
-        main_name_table,
+        top_left,
         Rect::new(scroll_x, scroll_y, screen_w, screen_h),
         -(scroll_x as isize),
         -(scroll_y as isize),
-    );
-
-    //画面右下
-    render_name_table(
-        ppu,
-        frame,
-        second_name_table,
-        Rect::new(0, 0, scroll_x, scroll_y),
-        (screen_w - scroll_x) as isize,
-        (screen_h - scroll_y) as isize,
-    );
-
-    //画面左下
-    render_name_table(
-        ppu,
-        frame,
-        main_name_table,
-        Rect::new(scroll_x, 0, screen_w, scroll_y),
-        -(scroll_x as isize),
-        (screen_h - scroll_y) as isize,
+        &draw_rect,
     );
 
     //画面右上
     render_name_table(
         ppu,
         frame,
-        second_name_table,
+        top_right,
         Rect::new(0, scroll_y, scroll_x, screen_h),
         (screen_w - scroll_x) as isize,
         -(scroll_y as isize),
+        &draw_rect,
+    );
+
+    //画面左下
+    render_name_table(
+        ppu,
+        frame,
+        bottom_left,
+        Rect::new(scroll_x, 0, screen_w, scroll_y),
+        -(scroll_x as isize),
+        (screen_h - scroll_y) as isize,
+        &draw_rect,
+    );
+
+    //画面右下
+    render_name_table(
+        ppu,
+        frame,
+        bottom_right,
+        Rect::new(0, 0, scroll_x, scroll_y),
+        (screen_w - scroll_x) as isize,
+        (screen_h - scroll_y) as isize,
+        &draw_rect,
     );
 
     //draw sprites
@@ -181,6 +201,7 @@ fn render_name_table(
     view_port: Rect,
     shift_x: isize,
     shift_y: isize,
+    draw_rect: &Rect,
 ) {
     let bank = ppu.ctrl.background_pattern_addr();
     let attribute_table = &name_table[0x03C0..0x0400];
@@ -224,11 +245,15 @@ fn render_name_table(
                     && pixel_y >= view_port.y1
                     && pixel_y < view_port.y2
                 {
-                    frame.set_pixel(
-                        (shift_x + pixel_x as isize) as usize,
-                        (shift_y + pixel_y as isize) as usize,
-                        rgb,
-                    )
+                    let x = (shift_x + pixel_x as isize) as usize;
+                    let y = (shift_y + pixel_y as isize) as usize;
+                    if x >= draw_rect.x1
+                        && x < draw_rect.x2
+                        && y >= draw_rect.y1
+                        && y < draw_rect.y2
+                    {
+                        frame.set_pixel(x, y, rgb)
+                    }
                 }
             }
         }

@@ -1,6 +1,6 @@
 use crate::apu::NesAPU;
+use crate::frame::Frame;
 use crate::joypad::Joypad;
-use crate::mapper::Mapper;
 use crate::ppu::NesPPU;
 use crate::MAPPER;
 use log::{debug, info, trace};
@@ -9,23 +9,25 @@ pub struct Bus<'call> {
     cpu_vram: [u8; 2048],
     // prg_rom: Vec<u8>,
     ppu: NesPPU,
+    frame: Frame,
     joypad1: Joypad,
     joypad2: Joypad,
     apu: NesAPU,
     cycles: usize,
 
-    game_loop_callback: Box<dyn FnMut(&NesPPU, &mut Joypad) + 'call>,
+    game_loop_callback: Box<dyn FnMut(&NesPPU, &mut Joypad, &Frame) + 'call>,
 }
 
 impl<'a> Bus<'a> {
     pub fn new<'call, F>(apu: NesAPU, game_loop_callback: F) -> Bus<'call>
     where
-        F: FnMut(&NesPPU, &mut Joypad) + 'call,
+        F: FnMut(&NesPPU, &mut Joypad, &Frame) + 'call,
     {
         let ppu = NesPPU::new();
         Bus {
             cpu_vram: [0; 2048],
             ppu: ppu,
+            frame: Frame::new(),
             joypad1: Joypad::new(),
             joypad2: Joypad::new(),
             apu: apu,
@@ -38,13 +40,13 @@ impl<'a> Bus<'a> {
         self.cycles += cycles as usize;
 
         let nmi_before = self.ppu.nmi_interrupt.is_some();
-        self.ppu.tick(cycles * 3);
+        self.ppu.tick(cycles * 3, &mut self.frame);
         let nmi_after = self.ppu.nmi_interrupt.is_some();
 
         self.apu.tick(cycles);
 
         if !nmi_before && nmi_after {
-            (self.game_loop_callback)(&self.ppu, &mut self.joypad1);
+            (self.game_loop_callback)(&self.ppu, &mut self.joypad1, &self.frame);
         }
     }
 
@@ -170,7 +172,7 @@ impl Mem for Bus<'_> {
                 }
                 self.ppu.write_to_oam_dma(values);
                 for _ in 0..513 {
-                    self.ppu.tick(1);
+                    self.ppu.tick(1, &mut self.frame);
                 }
             }
 

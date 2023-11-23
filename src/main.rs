@@ -113,49 +113,49 @@ fn main() {
 
     let mut now = Instant::now();
     let interval = 1000 * 1000 * 1000 / 60; //60fps per frame
-    let mut frame = Frame::new();
+
     let apu = NesAPU::new(&sdl_context);
-    let bus = Bus::new(apu, move |ppu: &NesPPU, joypad1: &mut Joypad| {
-        // PPUから画面情報を取得し、それをframeに描画。
-        render::render(ppu, &mut frame);
+    let bus = Bus::new(
+        apu,
+        move |ppu: &NesPPU, joypad1: &mut Joypad, frame: &Frame| {
+            //frameのデータをテクスチャに更新します。このテクスチャはゲーム画面を表現します。
+            texture.update(None, &frame.data, 256 * 3).unwrap();
 
-        //frameのデータをテクスチャに更新します。このテクスチャはゲーム画面を表現します。
-        texture.update(None, &frame.data, 256 * 3).unwrap();
+            //テクスチャをウィンドウのキャンバスにコピーします。
+            canvas.copy(&texture, None, None).unwrap();
 
-        //テクスチャをウィンドウのキャンバスにコピーします。
-        canvas.copy(&texture, None, None).unwrap();
+            //ウィンドウ上にゲーム画面を表示します。
+            canvas.present();
 
-        //ウィンドウ上にゲーム画面を表示します。
-        canvas.present();
+            for event in event_pump.poll_iter() {
+                match event {
+                    Event::Quit { .. }
+                    | Event::KeyDown {
+                        keycode: Some(Keycode::Escape),
+                        ..
+                    } => std::process::exit(0),
 
-        for event in event_pump.poll_iter() {
-            match event {
-                Event::Quit { .. }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
-                    ..
-                } => std::process::exit(0),
-
-                Event::KeyDown { keycode, .. } => {
-                    if let Some(key) = key_map.get(&keycode.unwrap_or(Keycode::Ampersand)) {
-                        joypad1.set_button_pressed_status(*key, true);
+                    Event::KeyDown { keycode, .. } => {
+                        if let Some(key) = key_map.get(&keycode.unwrap_or(Keycode::Ampersand)) {
+                            joypad1.set_button_pressed_status(*key, true);
+                        }
                     }
-                }
 
-                Event::KeyUp { keycode, .. } => {
-                    if let Some(key) = key_map.get(&keycode.unwrap_or(Keycode::Ampersand)) {
-                        joypad1.set_button_pressed_status(*key, false);
+                    Event::KeyUp { keycode, .. } => {
+                        if let Some(key) = key_map.get(&keycode.unwrap_or(Keycode::Ampersand)) {
+                            joypad1.set_button_pressed_status(*key, false);
+                        }
                     }
+                    _ => { /* do nothing */ }
                 }
-                _ => { /* do nothing */ }
             }
-        }
-        let time = now.elapsed().as_nanos();
-        if time < interval {
-            sleep(Duration::from_nanos((interval - time) as u64));
-        }
-        now = Instant::now();
-    });
+            let time = now.elapsed().as_nanos();
+            if time < interval {
+                sleep(Duration::from_nanos((interval - time) as u64));
+            }
+            now = Instant::now();
+        },
+    );
 
     //CPU構造体の新しいインスタンスを作成し、busを渡します。
     // これにより、CPUがエミュレーションされ、NESのプログラムを実行できます。
