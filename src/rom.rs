@@ -17,6 +17,9 @@ pub struct Rom {
     pub mapper: u8,
     pub screen_mirroring: Mirroring,
     pub is_chr_ram: bool,
+
+    pub save_data: Vec<u8>,
+    pub save_data_file: String,
 }
 
 impl Rom {
@@ -62,6 +65,8 @@ impl Rom {
             mapper: mapper,
             screen_mirroring: screen_mirroring,
             is_chr_ram: chr_rom_size == 0,
+            save_data: Vec::new(),
+            save_data_file: String::from(""),
         })
     }
 
@@ -72,6 +77,8 @@ impl Rom {
             mapper: 0,
             screen_mirroring: Mirroring::VERTICAL,
             is_chr_ram: false,
+            save_data: Vec::new(),
+            save_data_file: String::from(""),
         };
     }
 }

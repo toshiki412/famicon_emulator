@@ -152,6 +152,7 @@ impl Mapper for Mapper1 {
         self.rom.is_chr_ram
     }
     fn set_rom(&mut self, rom: Rom) {
+        self.load_prg_ram(&rom.save_data);
         self.rom = rom;
     }
     fn write(&mut self, addr: u16, data: u8) {
@@ -195,8 +196,8 @@ impl Mapper for Mapper1 {
         // prg_ramは6000から始まる
         self.prg_ram[addr as usize - 0x6000] = data;
 
-        //FIXME 保存処理
-        let mut file = File::create("save.dat").unwrap();
+        //保存処理
+        let mut file = File::create(self.rom.save_data_file.as_str()).unwrap();
         file.write_all(&self.prg_ram).unwrap();
         file.flush().unwrap();
     }
@@ -206,6 +207,9 @@ impl Mapper for Mapper1 {
     }
 
     fn load_prg_ram(&mut self, raw: &Vec<u8>) {
+        if raw.is_empty() {
+            return;
+        }
         self.prg_ram = raw.to_vec()
     }
 
@@ -473,6 +477,7 @@ impl Mapper for Mapper4 {
         self.rom.is_chr_ram
     }
     fn set_rom(&mut self, rom: Rom) {
+        self.load_prg_ram(&rom.save_data);
         self.rom = rom;
     }
     fn write(&mut self, addr: u16, data: u8) {
@@ -535,8 +540,8 @@ impl Mapper for Mapper4 {
         // prg_ramは6000から始まる
         self.prg_ram[addr as usize - 0x6000] = data;
 
-        //FIXME 保存処理
-        let mut file = File::create("save.dat").unwrap();
+        //保存処理
+        let mut file = File::create(self.rom.save_data_file.as_str()).unwrap();
         file.write_all(&self.prg_ram).unwrap();
         file.flush().unwrap();
     }
@@ -546,6 +551,9 @@ impl Mapper for Mapper4 {
     }
 
     fn load_prg_ram(&mut self, raw: &Vec<u8>) {
+        if raw.is_empty() {
+            return;
+        }
         self.prg_ram = raw.to_vec()
     }
 

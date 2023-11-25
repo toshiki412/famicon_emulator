@@ -3,6 +3,9 @@ use crate::ppu::NesPPU;
 use crate::rom::Mirroring;
 use crate::{palette, MAPPER};
 
+const SCREEN_W: usize = 256;
+const SCREEN_H: usize = 240;
+
 struct Rect {
     x1: usize,
     y1: usize,
@@ -22,7 +25,14 @@ impl Rect {
 }
 
 pub fn render(ppu: &NesPPU, frame: &mut Frame, scanline: usize) {
-    //draw background
+    // 描画範囲
+    // 左上から１行描画し、下に8pixelずつ
+    let draw_rect = Rect::new(0, scanline - 8, SCREEN_W, scanline);
+
+    draw_background(ppu, frame, &draw_rect);
+    draw_sprite(ppu, frame, &draw_rect);
+}
+fn draw_background(ppu: &NesPPU, frame: &mut Frame, draw_rect: &Rect) {
     // scroll_x, scroll_yは実際の画面に描画するピクセルの座標のこと
     let scroll_x = (ppu.scroll.scroll_x) as usize;
     let scroll_y = (ppu.scroll.scroll_y) as usize;
@@ -62,19 +72,12 @@ pub fn render(ppu: &NesPPU, frame: &mut Frame, scanline: usize) {
             }
         };
 
-    let screen_w = 256;
-    let screen_h = 240;
-
-    // 描画範囲
-    // 左上から１行描画し、下に8pixelずつ
-    let draw_rect = Rect::new(0, scanline - 8, screen_w, scanline);
-
     //画面左上
     render_name_table(
         ppu,
         frame,
         top_left,
-        Rect::new(scroll_x, scroll_y, screen_w, screen_h),
+        Rect::new(scroll_x, scroll_y, SCREEN_W, SCREEN_H),
         -(scroll_x as isize),
         -(scroll_y as isize),
         &draw_rect,
@@ -85,8 +88,8 @@ pub fn render(ppu: &NesPPU, frame: &mut Frame, scanline: usize) {
         ppu,
         frame,
         top_right,
-        Rect::new(0, scroll_y, scroll_x, screen_h),
-        (screen_w - scroll_x) as isize,
+        Rect::new(0, scroll_y, scroll_x, SCREEN_H),
+        (SCREEN_W - scroll_x) as isize,
         -(scroll_y as isize),
         &draw_rect,
     );
@@ -96,9 +99,9 @@ pub fn render(ppu: &NesPPU, frame: &mut Frame, scanline: usize) {
         ppu,
         frame,
         bottom_left,
-        Rect::new(scroll_x, 0, screen_w, scroll_y),
+        Rect::new(scroll_x, 0, SCREEN_W, scroll_y),
         -(scroll_x as isize),
-        (screen_h - scroll_y) as isize,
+        (SCREEN_H - scroll_y) as isize,
         &draw_rect,
     );
 
@@ -108,54 +111,96 @@ pub fn render(ppu: &NesPPU, frame: &mut Frame, scanline: usize) {
         frame,
         bottom_right,
         Rect::new(0, 0, scroll_x, scroll_y),
-        (screen_w - scroll_x) as isize,
-        (screen_h - scroll_y) as isize,
+        (SCREEN_W - scroll_x) as isize,
+        (SCREEN_H - scroll_y) as isize,
         &draw_rect,
     );
-
-    //draw sprites
-    //TODO 8x16 mode
+}
+fn draw_sprite(ppu: &NesPPU, frame: &mut Frame, draw_rect: &Rect) {
     for i in (0..ppu.oam_data.len()).step_by(4).rev() {
+        // OAMメモリからスプライト情報を取得
         let tile_y = ppu.oam_data[i] as usize;
         let tile_idx = ppu.oam_data[i + 1] as u16;
         let attr = ppu.oam_data[i + 2];
         let tile_x = ppu.oam_data[i + 3] as usize;
 
-        let flip_vertical = (attr >> 7 & 1) == 1;
-        let flip_horizontal = (attr >> 6 & 1) == 1;
-        let palette_idx = attr & 0b11;
-        let sprite_palette = sprite_palette(ppu, tile_y, palette_idx);
-
         let bank: u16 = ppu.ctrl.sprite_pattern_addr();
 
-        //bank + tile_idx * 16 これが最初の番地
-        let start = bank + tile_idx * 16;
-        let mut tile: [u8; 16] = [0; 16];
-        for i in 0..=15 {
-            tile[i] = unsafe { MAPPER.read_chr_rom(start + i as u16) };
-        }
+        if ppu.ctrl.is_sprite_8x16_mode() {
+            // 8x16では各スプライトが上下の２つのタイルに分かれている
 
-        for y in 0..=7 {
-            let mut upper = tile[y];
-            let mut lower = tile[y + 8];
-            'ololo: for x in (0..=7).rev() {
-                let value = (1 & lower) << 1 | (1 & upper);
-                upper = upper >> 1;
-                lower = lower >> 1;
-                let rgb = match value {
-                    0 => continue 'ololo, //skip coloring the pixel
-                    1 => palette::SYSTEM_PALLETE[sprite_palette[1] as usize],
-                    2 => palette::SYSTEM_PALLETE[sprite_palette[2] as usize],
-                    3 => palette::SYSTEM_PALLETE[sprite_palette[3] as usize],
-                    _ => panic!("cant be"),
-                };
+            // tile_idxの最下位ビットが0なら0番目のタイル、1ならば1番目のタイル
+            let bank = if tile_idx & 0x01 == 0 { 0 } else { 0x1000 };
 
-                match (flip_horizontal, flip_vertical) {
-                    (false, false) => frame.set_pixel(tile_x + x, tile_y + y, rgb),
-                    (true, false) => frame.set_pixel(tile_x + 7 - x, tile_y + y, rgb),
-                    (false, true) => frame.set_pixel(tile_x + x, tile_y + 7 - y, rgb),
-                    (true, true) => frame.set_pixel(tile_x + 7 - x, tile_y + 7 - y, rgb),
-                }
+            // (tile_idx & 0xFE) は偶数番号の場合はそのまま、奇数番号の場合は1引いた偶数
+            // 奇数番号のタイルはその前の偶数番号のタイルと共に同一のスプライトになる
+            let top = bank + (tile_idx & 0xFE) * 16;
+            let bottom = bank + ((tile_idx & 0xFE) + 1) * 16;
+
+            let flip_vertical = (attr >> 7 & 1) == 1;
+            // flip_verticalなら上下反転
+            if flip_vertical {
+                draw_tile(ppu, frame, bottom, tile_x, tile_y, attr, draw_rect);
+                draw_tile(ppu, frame, top, tile_x, tile_y + 8, attr, draw_rect);
+            } else {
+                draw_tile(ppu, frame, top, tile_x, tile_y, attr, draw_rect);
+                draw_tile(ppu, frame, bottom, tile_x, tile_y + 8, attr, draw_rect);
+            }
+        } else {
+            // bank + tile_idx * 16 これが最初の番地
+            // パターンテーブル上でのアドレスを計算している
+            let start = bank + tile_idx * 16;
+
+            draw_tile(ppu, frame, start, tile_x, tile_y, attr, draw_rect);
+        };
+    }
+}
+
+fn draw_tile(
+    ppu: &NesPPU,
+    frame: &mut Frame,
+    start: u16,
+    tile_x: usize,
+    tile_y: usize,
+    attr: u8,
+    draw_rect: &Rect,
+) {
+    // スプライトの属性情報attrから情報を抽出
+    let flip_vertical = (attr >> 7 & 1) == 1;
+    let flip_horizontal = (attr >> 6 & 1) == 1;
+    let palette_idx = attr & 0b11; //スプライトが使用するパレットを指定
+    let sprite_palette = sprite_palette(ppu, tile_y, palette_idx);
+
+    let mut tile: [u8; 16] = [0; 16];
+    for i in 0..=15 {
+        tile[i] = unsafe { MAPPER.read_chr_rom(start + i as u16) };
+    }
+
+    // 描画処理
+    for y in 0..=7 {
+        let mut upper = tile[y];
+        let mut lower = tile[y + 8];
+        'ololo: for x in (0..=7).rev() {
+            let value = (1 & lower) << 1 | (1 & upper);
+            upper = upper >> 1;
+            lower = lower >> 1;
+            let rgb = match value {
+                0 => continue 'ololo, //skip coloring the pixel
+                1 => palette::SYSTEM_PALLETE[sprite_palette[1] as usize],
+                2 => palette::SYSTEM_PALLETE[sprite_palette[2] as usize],
+                3 => palette::SYSTEM_PALLETE[sprite_palette[3] as usize],
+                _ => panic!("cant be"),
+            };
+
+            let (_x, _y) = match (flip_horizontal, flip_vertical) {
+                (false, false) => (tile_x + x, tile_y + y),
+                (true, false) => (tile_x + 7 - x, tile_y + y),
+                (false, true) => (tile_x + x, tile_y + 7 - y),
+                (true, true) => (tile_x + 7 - x, tile_y + 7 - y),
+            };
+
+            if _x >= draw_rect.x1 && _x < draw_rect.x2 && _y >= draw_rect.y1 && _y < draw_rect.y2 {
+                frame.set_pixel(_x, _y, rgb);
             }
         }
     }

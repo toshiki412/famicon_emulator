@@ -107,8 +107,6 @@ fn main() {
         *MAPPER = create_mapper(rom);
     }
 
-    // load_save_data("save.dat");
-
     let mut now = Instant::now();
     let interval = 1000 * 1000 * 1000 / 60; //60fps per frame
 
