@@ -88,7 +88,7 @@ fn main() {
     key_map.insert(Keycode::S, joypad::JoypadButton::BUTTON_B);
 
     //mapper0
-    // let rom = load_rom("rom/mario.nes");
+    let rom = load_rom("rom/mario.nes");
     //mapper1
     // let rom = load_rom("rom/dragon_quest4.nes");
     //mapper2
