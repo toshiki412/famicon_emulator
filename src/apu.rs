@@ -1012,10 +1012,12 @@ struct NoiseRandom {
 }
 
 impl NoiseRandom {
+    // 長周期
     pub fn new_long() -> Self {
         NoiseRandom { bit: 1, value: 1 }
     }
 
+    // 短周期
     pub fn new_short() -> Self {
         NoiseRandom { bit: 6, value: 1 }
     }

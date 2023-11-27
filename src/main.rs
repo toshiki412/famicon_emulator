@@ -96,7 +96,7 @@ fn main() {
     //mapper3
     // let rom = load_rom("rom/dragon_quest1.nes");
     //mapper4
-    let rom = load_rom("rom/finalfantasy3.nes");
+    // let rom = load_rom("rom/finalfantasy3.nes");
 
     info!(
         "ROM: mapper={}, mirroring={:?}, chr_ram={}",
@@ -157,15 +157,12 @@ fn main() {
     // これにより、CPUがエミュレーションされ、NESのプログラムを実行できます。
     let mut cpu = CPU::new(bus);
     cpu.reset();
-    cpu.run_with_callback(move |_| {});
-}
-
-fn load_save_data(path: &str) {
-    let mut f = File::open(path).expect("no save file");
-    let metadata = std::fs::metadata(path).expect("unable to read metadata");
-    let mut buffer = vec![0; metadata.len() as usize];
-    f.read(&mut buffer).expect("buffer overflow");
-    unsafe { MAPPER.load_prg_ram(&buffer) }
+    // cpu.run_with_callback(move |_| {});
+    cpu.run_with_callback(move |cpu| {
+        if log_enabled!(Level::Trace) {
+            trace(cpu);
+        }
+    });
 }
 
 fn handle_user_input(cpu: &mut CPU, event_pump: &mut EventPump) {
