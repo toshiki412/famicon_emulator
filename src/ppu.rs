@@ -1,5 +1,6 @@
 use crate::frame::Frame;
-use crate::render::{self, render};
+use crate::palette;
+use crate::render::{self, render, sprite_palette};
 use crate::{rom::Mirroring, MAPPER};
 use bitflags::bitflags;
 use log::{debug, info, trace};
@@ -278,8 +279,9 @@ impl NesPPU {
 
             // 1タイル分見終わったときここでrenderで描画する
             // NOTE 描画は1タイルずつ行う
-            if self.scanline % 8 == 0 {
-                render(&self, frame, self.scanline);
+            // スプライトゼロヒットはh=2から始まり、ピクセル出力はさらに2tick遅れる
+            if self.scanline % 8 == 6 {
+                render(&self, frame, self.scanline + 2);
             }
 
             unsafe {
@@ -319,8 +321,34 @@ impl NesPPU {
 
     fn is_sprite_zero_hit(&self, cycle: usize) -> bool {
         let y = self.oam_data[0] as usize;
+        let tile_idx = self.oam_data[1] as u16;
         let x = self.oam_data[3] as usize;
-        (y == self.scanline as usize) && x <= cycle && self.mask.show_sprites()
+
+        // タイルの取得
+        let bank: u16 = self.ctrl.sprite_pattern_addr();
+        let start = bank + tile_idx * 16;
+        let mut tile: [u8; 16] = [0; 16];
+        for i in 0..=15 {
+            tile[i] = unsafe { MAPPER.read_chr_rom(start + i as u16) };
+        }
+
+        let current = self.scanline as i32 - (y as i32);
+        if 0 <= current && current <= 7 && x <= cycle && self.mask.show_sprites() {
+            let line = self.scanline % 8;
+
+            let mut upper = tile[line];
+            let mut lower = tile[line + 8];
+            'ololo: for x in (0..=7).rev() {
+                let value = (1 & lower) << 1 | (1 & upper);
+                upper = upper >> 1;
+                lower = lower >> 1;
+                match value {
+                    0 => continue 'ololo, //skip coloring the pixel
+                    _ => return true,
+                };
+            }
+        }
+        return false;
     }
 }
 
