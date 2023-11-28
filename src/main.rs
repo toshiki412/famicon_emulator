@@ -157,12 +157,12 @@ fn main() {
     // これにより、CPUがエミュレーションされ、NESのプログラムを実行できます。
     let mut cpu = CPU::new(bus);
     cpu.reset();
-    // cpu.run_with_callback(move |_| {});
-    cpu.run_with_callback(move |cpu| {
-        if log_enabled!(Level::Trace) {
-            trace(cpu);
-        }
-    });
+    cpu.run_with_callback(move |_| {});
+    // cpu.run_with_callback(move |cpu| {
+    //     if log_enabled!(Level::Trace) {
+    //         trace(cpu);
+    //     }
+    // });
 }
 
 fn handle_user_input(cpu: &mut CPU, event_pump: &mut EventPump) {
