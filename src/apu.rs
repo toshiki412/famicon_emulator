@@ -1,14 +1,19 @@
-use bitflags::{bitflags, Flags};
+use bitflags::bitflags;
 use log::{debug, info, log_enabled, trace, Level};
 use sdl2::audio::{AudioCallback, AudioDevice, AudioSpecDesired};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Duration;
+
+mod dmc;
+use self::dmc::{init_DMC, DMCEvent, DMCWave};
+use dmc::DMCRegister;
 
 pub struct NesAPU {
     ch1_register: Ch1Register,
     ch2_register: Ch2Register,
     ch3_register: Ch3Register,
     ch4_register: Ch4Register,
+    dmc_register: DMCRegister,
 
     frame_counter: FrameCounter,
     status: StatusRegister,
@@ -16,25 +21,29 @@ pub struct NesAPU {
     counter: usize,
 
     ch1_device: AudioDevice<SquareWave>,
-    ch2_device: AudioDevice<SquareWave>,
-    ch3_device: AudioDevice<TriangleWave>,
-    ch4_device: AudioDevice<NoiseWave>,
-
     ch1_sender: Sender<SquareEvent>,
     ch1_receiver: Receiver<ChannelEvent>,
     ch1_length_counter: u8,
 
+    ch2_device: AudioDevice<SquareWave>,
     ch2_sender: Sender<SquareEvent>,
     ch2_receiver: Receiver<ChannelEvent>,
     ch2_length_counter: u8,
 
+    ch3_device: AudioDevice<TriangleWave>,
     ch3_sender: Sender<TriangleEvent>,
     ch3_receiver: Receiver<ChannelEvent>,
     ch3_length_counter: u8,
 
+    ch4_device: AudioDevice<NoiseWave>,
     ch4_sender: Sender<NoiseEvent>,
     ch4_receiver: Receiver<ChannelEvent>,
     ch4_length_counter: u8,
+
+    dmc_device: AudioDevice<DMCWave>,
+    dmc_sender: Sender<DMCEvent>,
+    dmc_receiver: Receiver<ChannelEvent>,
+    dmc_sample_byte_count: u8,
 }
 
 const NES_CPU_CLOCK: f32 = 1_789_772.; //1.78MHz
@@ -45,11 +54,13 @@ impl NesAPU {
         let (ch2_device, ch2_sender, ch2_receiver) = init_square(&sdl_context);
         let (ch3_device, ch3_sender, ch3_receiver) = init_triangle(&sdl_context);
         let (ch4_device, ch4_sender, ch4_receiver) = init_noise(&sdl_context);
+        let (dmc_device, dmc_sender, dmc_receiver) = init_DMC(&sdl_context);
         NesAPU {
             ch1_register: Ch1Register::new(),
             ch2_register: Ch2Register::new(),
             ch3_register: Ch3Register::new(),
             ch4_register: Ch4Register::new(),
+            dmc_register: DMCRegister::new(),
 
             frame_counter: FrameCounter::new(),
             status: StatusRegister::new(),
@@ -57,25 +68,29 @@ impl NesAPU {
             counter: 0,
 
             ch1_device: ch1_device,
-            ch2_device: ch2_device,
-            ch3_device: ch3_device,
-            ch4_device: ch4_device,
-
             ch1_sender: ch1_sender,
             ch1_receiver: ch1_receiver,
             ch1_length_counter: 0,
 
+            ch2_device: ch2_device,
             ch2_sender: ch2_sender,
             ch2_receiver: ch2_receiver,
             ch2_length_counter: 0,
 
+            ch3_device: ch3_device,
             ch3_sender: ch3_sender,
             ch3_receiver: ch3_receiver,
             ch3_length_counter: 0,
 
+            ch4_device: ch4_device,
             ch4_sender: ch4_sender,
             ch4_receiver: ch4_receiver,
             ch4_length_counter: 0,
+
+            dmc_device: dmc_device,
+            dmc_sender: dmc_sender,
+            dmc_receiver: dmc_receiver,
+            dmc_sample_byte_count: 0,
         }
     }
 
@@ -222,6 +237,17 @@ impl NesAPU {
         }
     }
 
+    pub fn write_dmc(&mut self, addr: u16, value: u8) {
+        self.dmc_register.write(addr, value);
+
+        // TODO
+
+        //最後のレジスタに書かれているときはリセット
+        if addr == 0x4013 {
+            self.dmc_sender.send(DMCEvent::Reset()).unwrap();
+        }
+    }
+
     pub fn read_status(&mut self) -> u8 {
         let mut res = self.status.bits();
         self.receive_events();
@@ -233,6 +259,12 @@ impl NesAPU {
         res = res | (if self.ch2_length_counter == 0 { 0 } else { 1 } << 1);
         res = res | (if self.ch3_length_counter == 0 { 0 } else { 1 } << 2);
         res = res | (if self.ch4_length_counter == 0 { 0 } else { 1 } << 3);
+        res = res
+            | (if self.dmc_sample_byte_count == 0 {
+                0
+            } else {
+                1
+            } << 4);
 
         self.status.remove(StatusRegister::ENABLE_FRAME_IRQ);
         res
@@ -262,6 +294,12 @@ impl NesAPU {
         self.ch4_sender
             .send(NoiseEvent::Enable(
                 self.status.contains(StatusRegister::ENABLE_4CH),
+            ))
+            .unwrap();
+
+        self.dmc_sender
+            .send(DMCEvent::Enable(
+                self.status.contains(StatusRegister::ENABLE_DMC),
             ))
             .unwrap();
     }
@@ -310,6 +348,16 @@ impl NesAPU {
             match res {
                 Ok(ChannelEvent::LengthCounter(counter)) => {
                     self.ch4_length_counter = counter;
+                }
+                _ => break,
+            }
+        }
+
+        loop {
+            let res = self.dmc_receiver.recv_timeout(Duration::from_millis(0));
+            match res {
+                Ok(ChannelEvent::LengthCounter(counter)) => {
+                    self.dmc_sample_byte_count = counter;
                 }
                 _ => break,
             }
@@ -636,7 +684,7 @@ enum SquareEvent {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum ChannelEvent {
+pub enum ChannelEvent {
     LengthCounter(u8),
 }
 
@@ -1108,7 +1156,7 @@ bitflags! {
         const ENABLE_2CH        = 0b0000_0010;
         const ENABLE_3CH        = 0b0000_0100;
         const ENABLE_4CH        = 0b0000_1000;
-        const ENABLE_5CH        = 0b0001_0000;
+        const ENABLE_DMC        = 0b0001_0000;
         const ENABLE_FRAME_IRQ  = 0b0100_0000;
         const ENABLE_DMC_IRQ    = 0b1000_0000;
     }
