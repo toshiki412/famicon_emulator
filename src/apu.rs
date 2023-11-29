@@ -98,36 +98,48 @@ impl NesAPU {
         self.ch1_register.write(addr, value);
 
         //sdlに送る
-        self.ch1_sender
-            .send(SquareEvent::Note(SquareNote {
-                duty: self.ch1_register.duty,
-            }))
-            .unwrap();
 
-        self.ch1_sender
-            .send(SquareEvent::Envelope(EnvelopeData::new(
-                self.ch1_register.volume,
-                self.ch1_register.envelope_flag,
-                !self.ch1_register.key_off_counter_flag,
-            )))
-            .unwrap();
+        if addr == 0x4000 {
+            self.ch1_sender
+                .send(SquareEvent::Note(SquareNote {
+                    duty: self.ch1_register.duty,
+                }))
+                .unwrap();
+            self.ch1_sender
+                .send(SquareEvent::Envelope(EnvelopeData::new(
+                    self.ch1_register.volume,
+                    self.ch1_register.envelope_flag,
+                    !self.ch1_register.key_off_counter_flag,
+                )))
+                .unwrap();
+        }
 
-        self.ch1_sender
-            .send(SquareEvent::LengthCounter(LengthCounterData::new(
-                self.ch1_register.key_off_count,
-                self.ch1_register.key_off_counter_flag,
-            )))
-            .unwrap();
+        if addr == 0x4000 || addr == 0x4003 {
+            self.ch1_sender
+                .send(SquareEvent::LengthCounter(LengthCounterData::new(
+                    self.ch1_register.key_off_count,
+                    self.ch1_register.key_off_counter_flag,
+                )))
+                .unwrap();
+        }
 
-        self.ch1_sender
-            .send(SquareEvent::Sweep(SweepData::new(
-                self.ch1_register.frequency,
-                self.ch1_register.sweep_change_amount,
-                self.ch1_register.sweep_change_direction,
-                self.ch1_register.sweep_timer_count,
-                self.ch1_register.sweep_enable_flag,
-            )))
-            .unwrap();
+        if addr == 0x4001 {
+            self.ch1_sender
+                .send(SquareEvent::Sweep(SweepData::new(
+                    self.ch1_register.sweep_change_amount,
+                    self.ch1_register.sweep_change_direction,
+                    self.ch1_register.sweep_timer_count,
+                    self.ch1_register.sweep_enable_flag,
+                )))
+                .unwrap();
+        }
+
+        // 4002か4003のとき、frequencyを更新
+        if addr == 0x4002 || addr == 0x4003 {
+            self.ch1_sender
+                .send(SquareEvent::ChangeFrequency(self.ch1_register.frequency))
+                .unwrap();
+        }
 
         //最後のレジスタに書かれているときはリセット
         if addr == 0x4003 {
@@ -139,36 +151,49 @@ impl NesAPU {
         self.ch2_register.write(addr, value);
 
         //sdlに送る
-        self.ch2_sender
-            .send(SquareEvent::Note(SquareNote {
-                duty: self.ch2_register.duty,
-            }))
-            .unwrap();
 
-        self.ch2_sender
-            .send(SquareEvent::Envelope(EnvelopeData::new(
-                self.ch2_register.volume,
-                self.ch2_register.envelope_flag,
-                !self.ch2_register.key_off_counter_flag,
-            )))
-            .unwrap();
+        if addr == 0x4004 {
+            self.ch2_sender
+                .send(SquareEvent::Note(SquareNote {
+                    duty: self.ch2_register.duty,
+                }))
+                .unwrap();
 
-        self.ch2_sender
-            .send(SquareEvent::LengthCounter(LengthCounterData::new(
-                self.ch2_register.key_off_count,
-                self.ch2_register.key_off_counter_flag,
-            )))
-            .unwrap();
+            self.ch2_sender
+                .send(SquareEvent::Envelope(EnvelopeData::new(
+                    self.ch2_register.volume,
+                    self.ch2_register.envelope_flag,
+                    !self.ch2_register.key_off_counter_flag,
+                )))
+                .unwrap();
+        }
 
-        self.ch2_sender
-            .send(SquareEvent::Sweep(SweepData::new(
-                self.ch2_register.frequency,
-                self.ch2_register.sweep_change_amount,
-                self.ch2_register.sweep_change_direction,
-                self.ch2_register.sweep_timer_count,
-                self.ch2_register.sweep_enable_flag,
-            )))
-            .unwrap();
+        if addr == 0x4004 || addr == 0x4007 {
+            self.ch2_sender
+                .send(SquareEvent::LengthCounter(LengthCounterData::new(
+                    self.ch2_register.key_off_count,
+                    self.ch2_register.key_off_counter_flag,
+                )))
+                .unwrap();
+        }
+
+        if addr == 0x4005 {
+            self.ch2_sender
+                .send(SquareEvent::Sweep(SweepData::new(
+                    self.ch2_register.sweep_change_amount,
+                    self.ch2_register.sweep_change_direction,
+                    self.ch2_register.sweep_timer_count,
+                    self.ch2_register.sweep_enable_flag,
+                )))
+                .unwrap();
+        }
+
+        // 4006か4007のとき、frequencyを更新
+        if addr == 0x4006 || addr == 0x4007 {
+            self.ch2_sender
+                .send(SquareEvent::ChangeFrequency(self.ch2_register.frequency))
+                .unwrap();
+        }
 
         //最後のレジスタに書かれているときはリセット
         if addr == 0x4007 {
@@ -180,24 +205,31 @@ impl NesAPU {
         self.ch3_register.write(addr, value);
 
         //sdlに送る
-        self.ch3_sender
-            .send(TriangleEvent::Note(TriangleNote {
-                frequency: self.ch3_register.frequency,
-            }))
-            .unwrap();
 
-        self.ch3_sender
-            .send(TriangleEvent::LengthCounter(LengthCounterData::new(
-                self.ch3_register.key_off_count,
-                self.ch3_register.key_off_counter_flag,
-            )))
-            .unwrap();
+        if addr == 0x4008 {
+            self.ch3_sender
+                .send(TriangleEvent::LinearCounter(LinearCounterData::new(
+                    self.ch3_register.length,
+                )))
+                .unwrap();
+        }
 
-        self.ch3_sender
-            .send(TriangleEvent::LinearCounter(LinearCounterData::new(
-                self.ch3_register.length,
-            )))
-            .unwrap();
+        if addr == 0x4008 || addr == 0x400B {
+            self.ch3_sender
+                .send(TriangleEvent::LengthCounter(LengthCounterData::new(
+                    self.ch3_register.key_off_count,
+                    self.ch3_register.key_off_counter_flag,
+                )))
+                .unwrap();
+        }
+
+        if addr == 0x400A || addr == 0x400B {
+            self.ch3_sender
+                .send(TriangleEvent::Note(TriangleNote {
+                    frequency: self.ch3_register.frequency,
+                }))
+                .unwrap();
+        }
 
         //最後のレジスタに書かれているときはリセット
         if addr == 0x400B {
@@ -209,27 +241,34 @@ impl NesAPU {
         self.ch4_register.write(addr, value);
 
         //sdlに送る
-        self.ch4_sender
-            .send(NoiseEvent::Note(NoiseNote {
-                hz: self.ch4_register.noise_hz,
-                kind: self.ch4_register.kind,
-            }))
-            .unwrap();
 
-        self.ch4_sender
-            .send(NoiseEvent::Envelope(EnvelopeData::new(
-                self.ch4_register.volume,
-                self.ch4_register.envelope_flag,
-                !self.ch4_register.key_off_counter_flag,
-            )))
-            .unwrap();
+        if addr == 0x400C {
+            self.ch4_sender
+                .send(NoiseEvent::Envelope(EnvelopeData::new(
+                    self.ch4_register.volume,
+                    self.ch4_register.envelope_flag,
+                    !self.ch4_register.key_off_counter_flag,
+                )))
+                .unwrap();
+        }
 
-        self.ch4_sender
-            .send(NoiseEvent::LengthCounter(LengthCounterData::new(
-                self.ch4_register.key_off_count,
-                self.ch4_register.key_off_counter_flag,
-            )))
-            .unwrap();
+        if addr == 0x400C || addr == 0x400F {
+            self.ch4_sender
+                .send(NoiseEvent::LengthCounter(LengthCounterData::new(
+                    self.ch4_register.key_off_count,
+                    self.ch4_register.key_off_counter_flag,
+                )))
+                .unwrap();
+        }
+
+        if addr == 0x400E {
+            self.ch4_sender
+                .send(NoiseEvent::Note(NoiseNote {
+                    hz: self.ch4_register.noise_hz,
+                    kind: self.ch4_register.kind,
+                }))
+                .unwrap();
+        }
 
         //最後のレジスタに書かれているときはリセット
         if addr == 0x400F {
@@ -683,6 +722,7 @@ enum SquareEvent {
     EnvelopeTick(),
     LengthCounter(LengthCounterData),
     LengthCounterTick(),
+    ChangeFrequency(u16),
     Sweep(SweepData),
     SweepTick(),
     Reset(),
@@ -756,8 +796,11 @@ impl AudioCallback for SquareWave {
                             .send(ChannelEvent::LengthCounter(self.length_counter.counter))
                             .unwrap();
                     }
+                    Ok(SquareEvent::ChangeFrequency(f)) => {
+                        self.sweep.frequency = f;
+                    }
                     Ok(SquareEvent::Sweep(s)) => self.sweep.data = s,
-                    Ok(SquareEvent::SweepTick()) => self.sweep.tick(&self.length_counter),
+                    Ok(SquareEvent::SweepTick()) => self.sweep.tick(&mut self.length_counter),
                     Ok(SquareEvent::Reset()) => {
                         self.envelope.reset();
                         self.length_counter.reset();
@@ -994,7 +1037,6 @@ struct NoiseWave {
     phase: f32,
     receiver: Receiver<NoiseEvent>,
     sender: Sender<ChannelEvent>,
-    is_sound: bool,
     long_random: NoiseRandom,
     short_random: NoiseRandom,
 
@@ -1144,7 +1186,6 @@ fn init_noise(
             phase: 0.0,
             receiver: receiver,
             sender: sender2,
-            is_sound: false,
             long_random: NoiseRandom::new_long(),
             short_random: NoiseRandom::new_short(),
             enabled_sound: true,
@@ -1337,7 +1378,6 @@ static LENGTH_COUNTER_TABLE: [u8; 32] = [
 
 #[derive(Debug, Clone, PartialEq)]
 struct SweepData {
-    org_freq: u16,
     change_amount: u8,
     change_direction: u8,
     timer_count: u8,
@@ -1345,15 +1385,8 @@ struct SweepData {
 }
 
 impl SweepData {
-    fn new(
-        org_freq: u16,
-        change_amount: u8,
-        change_direction: u8,
-        timer_count: u8,
-        enabled: bool,
-    ) -> Self {
+    fn new(change_amount: u8, change_direction: u8, timer_count: u8, enabled: bool) -> Self {
         SweepData {
-            org_freq,
             change_amount,
             change_direction,
             timer_count,
@@ -1372,13 +1405,19 @@ struct Sweep {
 impl Sweep {
     fn new() -> Self {
         Sweep {
-            data: SweepData::new(0, 0, 0, 0, false),
+            data: SweepData::new(0, 0, 0, false),
             frequency: 0,
             counter: 0,
         }
     }
 
-    fn tick(&mut self, length_counter: &LengthCounter) {
+    fn tick(&mut self, length_counter: &mut LengthCounter) {
+        self.counter += 1;
+        if self.counter < (self.data.timer_count + 1) {
+            return;
+        }
+        self.counter = 0;
+
         if !self.data.enabled {
             return;
         }
@@ -1392,12 +1431,6 @@ impl Sweep {
             return;
         }
 
-        self.counter += 1;
-        if self.counter < (self.data.timer_count + 1) {
-            return;
-        }
-        self.counter = 0;
-
         if self.data.change_direction == 0 {
             //尻下がりモード
             self.frequency = self.frequency + (self.frequency >> self.data.change_amount as u16);
@@ -1407,8 +1440,8 @@ impl Sweep {
         }
 
         //チャンネルの周期が8未満か0x7FFより大きくなったらスイープを停止しチャンネルを無音化する
-        if self.frequency < 8 || self.frequency > 0x7FF {
-            self.frequency = 0;
+        if self.frequency < 0x008 || self.frequency > 0x07FF {
+            length_counter.counter = 0;
         }
     }
 
@@ -1420,7 +1453,7 @@ impl Sweep {
     }
 
     fn reset(&mut self) {
-        self.frequency = self.data.org_freq;
+        // self.frequency = self.data.org_freq;
         self.counter = 0;
     }
 }
