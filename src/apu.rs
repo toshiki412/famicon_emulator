@@ -46,7 +46,7 @@ pub struct NesAPU {
     dmc_sample_byte_count: u8,
 }
 
-const NES_CPU_CLOCK: f32 = 1_789_772.; //1.78MHz
+const NES_CPU_CLOCK: f32 = 1_789_772.5; //1.78MHz
 
 impl NesAPU {
     pub fn new(sdl_context: &sdl2::Sdl) -> Self {
@@ -444,6 +444,11 @@ impl NesAPU {
         self.ch1_sender.send(SquareEvent::EnvelopeTick()).unwrap();
         self.ch2_sender.send(SquareEvent::EnvelopeTick()).unwrap();
         self.ch4_sender.send(NoiseEvent::EnvelopeTick()).unwrap();
+
+        //三角波の線形カウンタのクロック生成
+        self.ch3_sender
+            .send(TriangleEvent::LinearCounterTick())
+            .unwrap();
     }
 
     fn send_sweep_tick(&self) {
@@ -757,6 +762,7 @@ impl AudioCallback for SquareWave {
                         self.envelope.reset();
                         self.length_counter.reset();
                         self.sweep.reset();
+                        self.phase = 0.0;
                     }
                     Err(_) => break,
                 }
@@ -800,7 +806,7 @@ fn init_square(
     let desire_spec = AudioSpecDesired {
         freq: Some(44100), //1秒間に44100個の配列が消費される
         channels: Some(1),
-        samples: None,
+        samples: None, //0サンプルごとにcallbackが呼ばれる?
     };
 
     let device = audio_subsystem
@@ -827,6 +833,7 @@ enum TriangleEvent {
     LengthCounter(LengthCounterData),
     LengthCounterTick(),
     LinearCounter(LinearCounterData),
+    LinearCounterTick(),
     Reset(),
 }
 
@@ -853,7 +860,7 @@ struct TriangleWave {
     note: TriangleNote,
 
     length_counter: LengthCounter,
-    linear_counter: LinearCounter,
+    linear_counter: LinearCounter, // 音長コントロール
 }
 
 impl AudioCallback for TriangleWave {
@@ -861,7 +868,7 @@ impl AudioCallback for TriangleWave {
 
     // outは外からもらってくるオーディオのバッファ.ここに波を入れる
     fn callback(&mut self, out: &mut [Self::Channel]) {
-        //三角波の生成
+        //三角波の生成3
         for x in out.iter_mut() {
             loop {
                 let res = self.receiver.recv_timeout(Duration::from_millis(0));
@@ -877,7 +884,14 @@ impl AudioCallback for TriangleWave {
                             .unwrap();
                     }
                     Ok(TriangleEvent::LinearCounter(l)) => self.linear_counter.data = l,
-                    Ok(TriangleEvent::Reset()) => self.length_counter.reset(),
+                    Ok(TriangleEvent::LinearCounterTick()) => {
+                        self.linear_counter.tick();
+                    }
+                    Ok(TriangleEvent::Reset()) => {
+                        self.length_counter.reset();
+                        self.linear_counter.reset();
+                        self.phase = 0.0;
+                    }
                     Err(_) => break,
                 }
             }
@@ -922,7 +936,7 @@ fn init_triangle(
     let desire_spec = AudioSpecDesired {
         freq: Some(44100), //1秒間に44100個の配列が消費される
         channels: Some(1),
-        samples: None,
+        samples: None, //0サンプルごとにcallbackが呼ばれる?
     };
 
     let device = audio_subsystem
@@ -989,6 +1003,7 @@ struct NoiseWave {
     note: NoiseNote,
 
     length_counter: LengthCounter,
+    sound_table: Vec<f32>,
 }
 
 impl AudioCallback for NoiseWave {
@@ -1001,7 +1016,23 @@ impl AudioCallback for NoiseWave {
             loop {
                 let res = self.receiver.recv_timeout(Duration::from_millis(0));
                 match res {
-                    Ok(NoiseEvent::Note(note)) => self.note = note,
+                    Ok(NoiseEvent::Note(note)) => {
+                        self.note = note;
+                        let freq = NOISE_TABLE[self.note.hz as usize] as i32;
+                        let mut v: bool = false;
+                        self.sound_table = (0..NES_CPU_CLOCK as i32)
+                            .map(|i| {
+                                if i % freq == 0 {
+                                    v = if self.note.is_long() {
+                                        self.long_random.next()
+                                    } else {
+                                        self.short_random.next()
+                                    };
+                                }
+                                return if v { 0.0 } else { 1.0 };
+                            })
+                            .collect()
+                    }
                     Ok(NoiseEvent::Enable(b)) => self.enabled_sound = b,
                     Ok(NoiseEvent::Envelope(e)) => self.envelope.data = e,
                     Ok(NoiseEvent::EnvelopeTick()) => self.envelope.tick(),
@@ -1015,11 +1046,17 @@ impl AudioCallback for NoiseWave {
                     Ok(NoiseEvent::Reset()) => {
                         self.envelope.reset();
                         self.length_counter.reset();
+                        self.phase = 0.0;
                     }
                     Err(_) => break,
                 }
             }
-            *x = if self.is_sound { 0.0 } else { 1.0 } * self.envelope.volume();
+            *x = if self.sound_table.len() == 0 {
+                0.0
+            } else {
+                self.sound_table[((NES_CPU_CLOCK - 0.5) * (self.phase / self.freq)) as usize]
+                    * self.envelope.volume()
+            };
 
             if self.length_counter.mute() {
                 *x = 0.0;
@@ -1029,16 +1066,17 @@ impl AudioCallback for NoiseWave {
                 *x = 0.0;
             }
 
-            let last_phase = self.phase;
-            self.phase = (self.phase + self.note.hz() / self.freq) % 1.0;
+            // let last_phase = self.phase;
+            // self.phase = (self.phase + self.note.hz() / self.freq) % 1.0;
 
-            if last_phase > self.phase {
-                self.is_sound = if self.note.is_long() {
-                    self.long_random.next()
-                } else {
-                    self.short_random.next()
-                };
-            }
+            // if last_phase > self.phase {
+            //     self.is_sound = if self.note.is_long() {
+            //         self.long_random.next()
+            //     } else {
+            //         self.short_random.next()
+            //     };
+            // }
+            self.phase = (self.phase + 1.0) % self.freq; //44100hzで1フェーズ
         }
     }
 }
@@ -1050,8 +1088,8 @@ enum NoiseKind {
 }
 
 static NOISE_TABLE: [u16; 16] = [
-    0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0030, 0x0040, 0x0050, 0x0065, 0x007f, 0x00be, 0x00fe,
-    0x017d, 0x01fc, 0x03f9, 0x07f2,
+    0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0060, 0x0080, 0x00A0, 0x00CA, 0x00FE, 0x017C, 0x01FC,
+    0x02FA, 0x03F8, 0x07F2, 0x0FE4,
 ];
 
 struct NoiseRandom {
@@ -1097,7 +1135,7 @@ fn init_noise(
     let desire_spec = AudioSpecDesired {
         freq: Some(44100), //1秒間に44100個の配列が消費される
         channels: Some(1),
-        samples: None,
+        samples: None, //0サンプルごとにcallbackが呼ばれる?
     };
 
     let device = audio_subsystem
@@ -1113,6 +1151,7 @@ fn init_noise(
             envelope: Envelope::new(),
             note: NoiseNote::new(),
             length_counter: LengthCounter::new(),
+            sound_table: vec![],
         })
         .unwrap();
 
@@ -1252,7 +1291,7 @@ impl LengthCounterData {
     fn new(counter_for_reset: u8, enabled: bool) -> Self {
         LengthCounterData {
             enabled,
-            counter_for_reset: LENGTH_COUNTER_TABLE[counter_for_reset as usize],
+            counter_for_reset: LENGTH_COUNTER_TABLE[counter_for_reset as usize] + 1,
         }
     }
 }
@@ -1283,8 +1322,7 @@ impl LengthCounter {
     }
 
     fn mute(&self) -> bool {
-        //length counterがenabledじゃなければそもそもmuteにする必要はない
-        self.data.enabled && (self.counter == 0)
+        self.counter == 0
     }
 
     fn reset(&mut self) {
@@ -1293,8 +1331,8 @@ impl LengthCounter {
 }
 
 static LENGTH_COUNTER_TABLE: [u8; 32] = [
-    0x05, 0x7F, 0x0A, 0x01, 0x14, 0x02, 0x28, 0x03, 0x50, 0x04, 0x1E, 0x05, 0x07, 0x06, 0x0D, 0x07,
-    0x06, 0x08, 0x0C, 0x09, 0x18, 0x0A, 0x30, 0x0B, 0x60, 0x0C, 0x24, 0x0D, 0x08, 0x0E, 0x10, 0x0F,
+    0x0A, 0xFE, 0x14, 0x02, 0x28, 0x04, 0x50, 0x06, 0xA0, 0x08, 0x3C, 0x0A, 0x0E, 0x0C, 0x1A, 0x0E,
+    0x0C, 0x10, 0x18, 0x12, 0x30, 0x14, 0x60, 0x16, 0xC0, 0x18, 0x48, 0x1A, 0x10, 0x1C, 0x20, 0x1E,
 ];
 
 #[derive(Debug, Clone, PartialEq)]
