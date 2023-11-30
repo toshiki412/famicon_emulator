@@ -279,7 +279,39 @@ impl NesAPU {
     pub fn write_dmc(&mut self, addr: u16, value: u8) {
         self.dmc_register.write(addr, value);
 
-        // TODO
+        if addr == 0x4010 {
+            self.dmc_sender
+                .send(DMCEvent::IrqEnable(self.dmc_register.irq_enable))
+                .unwrap();
+            self.dmc_sender
+                .send(DMCEvent::Loop(self.dmc_register.loop_flag))
+                .unwrap();
+            self.dmc_sender
+                .send(DMCEvent::Frequency(self.dmc_register.frequency_index))
+                .unwrap();
+        }
+
+        if addr == 0x4011 {
+            self.dmc_sender
+                .send(DMCEvent::Delta(self.dmc_register.delta_counter))
+                .unwrap();
+        }
+
+        if addr == 0x4012 {
+            self.dmc_sender
+                .send(DMCEvent::SampleStartAddr(
+                    self.dmc_register.sample_start_addr,
+                ))
+                .unwrap();
+        }
+
+        if addr == 0x4013 {
+            self.dmc_sender
+                .send(DMCEvent::SampleByteCount(
+                    self.dmc_register.sample_byte_count,
+                ))
+                .unwrap();
+        }
 
         //最後のレジスタに書かれているときはリセット
         if addr == 0x4013 {
@@ -849,7 +881,7 @@ fn init_square(
     let desire_spec = AudioSpecDesired {
         freq: Some(44100), //1秒間に44100個の配列が消費される
         channels: Some(1),
-        samples: None, //0サンプルごとにcallbackが呼ばれる?
+        samples: None, //0サンプルごとにcallbackが呼ばれる(1秒間に44100回callbackが呼ばれる)
     };
 
     let device = audio_subsystem
@@ -979,7 +1011,7 @@ fn init_triangle(
     let desire_spec = AudioSpecDesired {
         freq: Some(44100), //1秒間に44100個の配列が消費される
         channels: Some(1),
-        samples: None, //0サンプルごとにcallbackが呼ばれる?
+        samples: None, //0サンプルごとにcallbackが呼ばれる(1秒間に44100回callbackが呼ばれる)
     };
 
     let device = audio_subsystem
@@ -1177,7 +1209,7 @@ fn init_noise(
     let desire_spec = AudioSpecDesired {
         freq: Some(44100), //1秒間に44100個の配列が消費される
         channels: Some(1),
-        samples: None, //0サンプルごとにcallbackが呼ばれる?
+        samples: None, //0サンプルごとにcallbackが呼ばれる(1秒間に44100回callbackが呼ばれる)
     };
 
     let device = audio_subsystem
