@@ -76,7 +76,6 @@ pub struct DMCWave {
     receiver: Receiver<DMCEvent>,
     sender: Sender<ChannelEvent>,
     enabled_sound: bool,
-    data: u8,
 
     irq_enable: bool,
     loop_flag: bool,
@@ -85,6 +84,7 @@ pub struct DMCWave {
     sample_start_addr: u8,
     sample_byte_count: u8,
 
+    data: u8,
     org_freq: f32,
     org_sample_start_addr: u16,
     org_sample_byte_count: u32,
@@ -106,7 +106,11 @@ impl AudioCallback for DMCWave {
                         self.frequency_index = f;
                         self.org_freq = NES_CPU_CLOCK / (DMC_FREQUENCY_TABLE[f as usize] as f32)
                     }
-                    Ok(DMCEvent::Delta(d)) => self.delta_counter = d,
+                    Ok(DMCEvent::Delta(d)) => {
+                        self.delta_counter = d;
+                        self.sample_byte_count = 1;
+                        self.org_sample_byte_count = (1 * 8) as u32 * 0x10 + 1;
+                    }
                     Ok(DMCEvent::SampleStartAddr(sa)) => {
                         self.sample_start_addr = sa;
                         self.org_sample_start_addr = sa as u16 * 0x40 + 0xC000;
@@ -121,11 +125,19 @@ impl AudioCallback for DMCWave {
                 }
             }
 
-            if self.org_sample_byte_count != 0 {
-                if self.org_sample_byte_count & 0x07 == 0 {
+            let last_phase = self.phase;
+            self.phase = (self.phase + self.org_freq / self.freq) % 1.0;
+
+            if last_phase > self.phase {
+                if self.org_sample_byte_count == 0 {
+                    *x = 0.0;
+                    continue;
+                }
+                if self.org_sample_byte_count & 0x0007 == 0 {
                     if self.org_sample_byte_count != 0 {
-                        self.data =
-                            unsafe { MAPPER.read_prg_rom(self.org_sample_start_addr as u16) };
+                        unsafe {
+                            self.data = MAPPER.read_prg_rom(self.org_sample_start_addr);
+                        };
                         if self.org_sample_start_addr == 0xFFFF {
                             self.org_sample_start_addr = 0x8000;
                         } else {
@@ -135,33 +147,41 @@ impl AudioCallback for DMCWave {
                 }
 
                 if self.org_sample_byte_count != 0 {
-                    // 音の作成 音の増減データ
-                    if self.data & 0x01 == 0 {
+                    if self.data & 0x01 == 0x00 {
                         if self.delta_counter > 1 {
-                            self.delta_counter -= 2;
+                            self.delta_counter -= 2
                         }
                     } else {
                         if self.delta_counter < 126 {
-                            self.delta_counter += 2;
+                            self.delta_counter += 2
                         }
                     }
                     self.data = self.data >> 1;
                     self.org_sample_byte_count -= 1;
+                    self.sender
+                        .send(ChannelEvent::LengthCounter(self.org_sample_byte_count))
+                        .unwrap();
                 }
 
                 if self.org_sample_byte_count == 0 {
                     if self.loop_flag {
-                        //
+                        self.set_delta();
                     } else {
                         if self.irq_enable {
-                            //
+                            // TODO IRQを発生させる
                         }
                     }
                 }
+            }
+            if self.delta_counter == 0 || self.org_sample_byte_count == 0 {
+                *x = 0.0;
             } else {
+                *x = (self.delta_counter as f32 - 64.0) / 64.0;
+            }
+
+            if !self.enabled_sound {
                 *x = 0.0;
             }
-            self.phase = (self.phase + self.freq) % 1.0;
         }
     }
 }
@@ -206,7 +226,7 @@ pub fn init_DMC(
             frequency_index: 0,
             delta_counter: 0,
             sample_start_addr: 0,
-            sample_byte_count: 0,
+            sample_byte_count: 1, // (0*8 * 0x10 + 1)
             data: 0,
             org_freq: NES_CPU_CLOCK / DMC_FREQUENCY_TABLE[0] as f32,
             org_sample_start_addr: 0xC000, // 0*0x40 + 0xC000
