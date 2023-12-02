@@ -2,7 +2,7 @@ use crate::{
     opscodes::{call, CPU_OPS_CODES},
     MAPPER,
 };
-use log::{debug, info, trace};
+use log::{debug, trace};
 
 use crate::bus::{Bus, Mem};
 // use crate::ppu::AddrRegister;
@@ -243,13 +243,6 @@ impl<'a> CPU<'a> {
         self.mem_write(pos + 1, hi);
     }
 
-    // pub fn load_and_run(&mut self, _program: Vec<u8>) {
-    //     // self.load(program);
-    //     self.load();
-    //     self.reset();
-    //     self.run();
-    // }
-
     pub fn reset(&mut self) {
         self.register_a = 0;
         self.register_x = 0;
@@ -263,17 +256,6 @@ impl<'a> CPU<'a> {
         self.program_counter = self.mem_read_u16(0xFFFC);
         // println!("PC: {:X}", self.program_counter);
         // self.program_counter = 0xC000;
-    }
-
-    // pub fn load(&mut self) {
-    // // pub fn load(&mut self, program: Vec<u8>) {
-    //     //8000番地から上にカートリッジ（ファミコンのカセット、プログラム）のデータを書き込む
-    //     // self.memory[0x8000..(0x8000 + program.len())].copy_from_slice(&program[..]);
-    //     // self.mem_write_u16(0xFFFC, 0x8000);
-    // }
-
-    pub fn run(&mut self) {
-        self.run_with_callback(|_| {});
     }
 
     pub fn run_with_callback<F>(&mut self, mut callback: F)
