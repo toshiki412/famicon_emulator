@@ -1,9 +1,6 @@
 use crate::rom::{Mirroring, Rom};
 use log::{debug, info, trace};
-use std::{
-    fs::File,
-    io::{self, BufReader, Write},
-};
+use std::{fs::File, io::Write};
 
 pub fn create_mapper(rom: Rom) -> Box<dyn Mapper> {
     let mut mapper: Box<dyn Mapper> = match rom.mapper {
@@ -82,7 +79,7 @@ impl Mapper for Mapper0 {
     fn read_chr_rom(&self, addr: u16) -> u8 {
         self.rom.chr_rom[addr as usize]
     }
-    fn scanline(&mut self, scanline: usize, show_background: bool) {}
+    fn scanline(&mut self, _scanline: usize, _show_background: bool) {}
     fn is_irq(&mut self) -> bool {
         false
     }

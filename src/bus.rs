@@ -3,7 +3,7 @@ use crate::frame::Frame;
 use crate::joypad::Joypad;
 use crate::ppu::NesPPU;
 use crate::MAPPER;
-use log::{debug, info, trace};
+use log::{debug, info};
 
 pub struct Bus<'call> {
     cpu_vram: [u8; 2048],
@@ -11,7 +11,7 @@ pub struct Bus<'call> {
     ppu: NesPPU,
     frame: Frame,
     joypad1: Joypad,
-    joypad2: Joypad,
+    // joypad2: Joypad,
     apu: NesAPU,
     cycles: usize,
 
@@ -29,7 +29,7 @@ impl<'a> Bus<'a> {
             ppu: ppu,
             frame: Frame::new(),
             joypad1: Joypad::new(),
-            joypad2: Joypad::new(),
+            // joypad2: Joypad::new(),
             apu: apu,
             cycles: 0,
             game_loop_callback: Box::from(game_loop_callback),
@@ -68,7 +68,7 @@ impl<'a> Bus<'a> {
 
 const RAM: u16 = 0x0000;
 const RAM_MIRRORS_END: u16 = 0x1FFF;
-const PPU_REGISTERS: u16 = 0x2000;
+// const PPU_REGISTERS: u16 = 0x2000;
 const PPU_REGISTERS_MIRRORS_END: u16 = 0x3FFF;
 
 const PRG_ROM: u16 = 0x8000;

@@ -1,6 +1,5 @@
 use crate::frame::Frame;
-use crate::palette;
-use crate::render::{self, render, sprite_palette};
+use crate::render::render;
 use crate::{rom::Mirroring, MAPPER};
 use bitflags::bitflags;
 use log::{debug, info, trace};
@@ -338,7 +337,7 @@ impl NesPPU {
 
             let mut upper = tile[line];
             let mut lower = tile[line + 8];
-            'ololo: for x in (0..=7).rev() {
+            'ololo: for _x in (0..=7).rev() {
                 let value = (1 & lower) << 1 | (1 & upper);
                 upper = upper >> 1;
                 lower = lower >> 1;

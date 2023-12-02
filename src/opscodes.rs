@@ -1,6 +1,6 @@
 use crate::cpu::{AddressingMode, CycleCalcMode, OpCode, CPU};
 use once_cell::sync::Lazy;
-use std::{collections::HashMap, sync::Mutex};
+use std::collections::HashMap;
 
 pub static CPU_OPS_CODES: Lazy<HashMap<u8, OpCode>> = Lazy::new(|| {
     let mut m = HashMap::new();
