@@ -1,5 +1,5 @@
 use bitflags::bitflags;
-use log::{debug, info, log_enabled, trace, Level};
+use log::info;
 use sdl2::audio::{AudioCallback, AudioDevice, AudioSpecDesired};
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::Duration;
@@ -23,27 +23,27 @@ pub struct NesAPU {
     ch1_device: AudioDevice<SquareWave>,
     ch1_sender: Sender<SquareEvent>,
     ch1_receiver: Receiver<ChannelEvent>,
-    ch1_length_counter: u8,
+    ch1_length_counter: u32,
 
     ch2_device: AudioDevice<SquareWave>,
     ch2_sender: Sender<SquareEvent>,
     ch2_receiver: Receiver<ChannelEvent>,
-    ch2_length_counter: u8,
+    ch2_length_counter: u32,
 
     ch3_device: AudioDevice<TriangleWave>,
     ch3_sender: Sender<TriangleEvent>,
     ch3_receiver: Receiver<ChannelEvent>,
-    ch3_length_counter: u8,
+    ch3_length_counter: u32,
 
     ch4_device: AudioDevice<NoiseWave>,
     ch4_sender: Sender<NoiseEvent>,
     ch4_receiver: Receiver<ChannelEvent>,
-    ch4_length_counter: u8,
+    ch4_length_counter: u32,
 
     dmc_device: AudioDevice<DMCWave>,
     dmc_sender: Sender<DMCEvent>,
     dmc_receiver: Receiver<ChannelEvent>,
-    dmc_sample_byte_count: u8,
+    dmc_sample_byte_count: u32,
 }
 
 const NES_CPU_CLOCK: f32 = 1_789_772.5; //1.78MHz
@@ -210,6 +210,7 @@ impl NesAPU {
             self.ch3_sender
                 .send(TriangleEvent::LinearCounter(LinearCounterData::new(
                     self.ch3_register.length,
+                    self.ch3_register.key_off_counter_flag,
                 )))
                 .unwrap();
         }
@@ -277,6 +278,7 @@ impl NesAPU {
     }
 
     pub fn write_dmc(&mut self, addr: u16, value: u8) {
+        info!("write dmc addr {:04X} value {:02X}", addr, value);
         self.dmc_register.write(addr, value);
 
         if addr == 0x4010 {
@@ -762,7 +764,7 @@ enum SquareEvent {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ChannelEvent {
-    LengthCounter(u8),
+    LengthCounter(u32),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -825,7 +827,9 @@ impl AudioCallback for SquareWave {
                         // );
                         self.length_counter.tick();
                         self.sender
-                            .send(ChannelEvent::LengthCounter(self.length_counter.counter))
+                            .send(ChannelEvent::LengthCounter(
+                                self.length_counter.counter as u32,
+                            ))
                             .unwrap();
                     }
                     Ok(SquareEvent::ChangeFrequency(f)) => {
@@ -955,10 +959,15 @@ impl AudioCallback for TriangleWave {
                         self.length_counter.tick();
                         self.linear_counter.tick();
                         self.sender
-                            .send(ChannelEvent::LengthCounter(self.length_counter.counter))
+                            .send(ChannelEvent::LengthCounter(
+                                self.length_counter.counter as u32,
+                            ))
                             .unwrap();
                     }
-                    Ok(TriangleEvent::LinearCounter(l)) => self.linear_counter.data = l,
+                    Ok(TriangleEvent::LinearCounter(l)) => {
+                        self.linear_counter.data = l;
+                        self.linear_counter.reset();
+                    }
                     Ok(TriangleEvent::LinearCounterTick()) => {
                         self.linear_counter.tick();
                     }
@@ -1069,15 +1078,14 @@ struct NoiseWave {
     phase: f32,
     receiver: Receiver<NoiseEvent>,
     sender: Sender<ChannelEvent>,
-    long_random: NoiseRandom,
-    short_random: NoiseRandom,
+    random: NoiseRandom,
 
     enabled_sound: bool,
     envelope: Envelope,
     note: NoiseNote,
 
     length_counter: LengthCounter,
-    sound_table: Vec<f32>,
+    is_sound: bool,
 }
 
 impl AudioCallback for NoiseWave {
@@ -1092,20 +1100,6 @@ impl AudioCallback for NoiseWave {
                 match res {
                     Ok(NoiseEvent::Note(note)) => {
                         self.note = note;
-                        let freq = NOISE_TABLE[self.note.hz as usize] as i32;
-                        let mut v: bool = false;
-                        self.sound_table = (0..NES_CPU_CLOCK as i32)
-                            .map(|i| {
-                                if i % freq == 0 {
-                                    v = if self.note.is_long() {
-                                        self.long_random.next()
-                                    } else {
-                                        self.short_random.next()
-                                    };
-                                }
-                                return if v { 0.0 } else { 1.0 };
-                            })
-                            .collect()
                     }
                     Ok(NoiseEvent::Enable(b)) => self.enabled_sound = b,
                     Ok(NoiseEvent::Envelope(e)) => self.envelope.data = e,
@@ -1114,7 +1108,9 @@ impl AudioCallback for NoiseWave {
                     Ok(NoiseEvent::LengthCounterTick()) => {
                         self.length_counter.tick();
                         self.sender
-                            .send(ChannelEvent::LengthCounter(self.length_counter.counter))
+                            .send(ChannelEvent::LengthCounter(
+                                self.length_counter.counter as u32,
+                            ))
                             .unwrap();
                     }
                     Ok(NoiseEvent::Reset()) => {
@@ -1125,12 +1121,7 @@ impl AudioCallback for NoiseWave {
                     Err(_) => break,
                 }
             }
-            *x = if self.sound_table.len() == 0 {
-                0.0
-            } else {
-                self.sound_table[((NES_CPU_CLOCK - 0.5) * (self.phase / self.freq)) as usize]
-                    * self.envelope.volume()
-            };
+            *x = if self.is_sound { 0.0 } else { 1.0 } * self.envelope.volume();
 
             if self.length_counter.mute() {
                 *x = 0.0;
@@ -1140,16 +1131,21 @@ impl AudioCallback for NoiseWave {
                 *x = 0.0;
             }
 
-            // let last_phase = self.phase;
-            // self.phase = (self.phase + self.note.hz() / self.freq) % 1.0;
+            let last_phase = self.phase;
+            let mut add = self.note.hz() / self.freq;
+            self.phase = (self.phase + add) % 1.0;
 
-            // if last_phase > self.phase {
-            //     self.is_sound = if self.note.is_long() {
-            //         self.long_random.next()
-            //     } else {
-            //         self.short_random.next()
-            //     };
-            // }
+            loop {
+                if add < 1.0 {
+                    break;
+                }
+                add -= 1.0;
+                self.is_sound = self.random.next(self.note.is_long())
+            }
+
+            if last_phase > self.phase {
+                self.is_sound = self.random.next(self.note.is_long())
+            }
             self.phase = (self.phase + 1.0) % self.freq; //44100hzで1フェーズ
         }
     }
@@ -1167,24 +1163,18 @@ static NOISE_TABLE: [u16; 16] = [
 ];
 
 struct NoiseRandom {
-    bit: u8,
     value: u16,
 }
 
 impl NoiseRandom {
-    // 長周期
-    pub fn new_long() -> Self {
-        NoiseRandom { bit: 1, value: 1 }
+    pub fn new() -> Self {
+        NoiseRandom { value: 1 }
     }
 
-    // 短周期
-    pub fn new_short() -> Self {
-        NoiseRandom { bit: 6, value: 1 }
-    }
-
-    pub fn next(&mut self) -> bool {
+    pub fn next(&mut self, is_long: bool) -> bool {
         //ロングモード時はビット0とビット1のXORを入れる
-        let b = (self.value & 0x01) ^ ((self.value >> self.bit) & 0x01);
+        let bit = if is_long { 1 } else { 6 }; //長周期は1,短周期は6
+        let b = (self.value & 0x01) ^ ((self.value >> bit) & 0x01);
         self.value = self.value >> 1;
         self.value = self.value & 0b011_1111_1111_1111 | b << 14;
 
@@ -1218,13 +1208,12 @@ fn init_noise(
             phase: 0.0,
             receiver: receiver,
             sender: sender2,
-            long_random: NoiseRandom::new_long(),
-            short_random: NoiseRandom::new_short(),
+            random: NoiseRandom::new(),
             enabled_sound: true,
             envelope: Envelope::new(),
             note: NoiseNote::new(),
             length_counter: LengthCounter::new(),
-            sound_table: vec![],
+            is_sound: false,
         })
         .unwrap();
 
@@ -1494,11 +1483,15 @@ impl Sweep {
 //LengthCounterのテーブルを見に行かないもの
 struct LinearCounterData {
     counter_for_reset: u8, //最初のカウント値。リセット用
+    enabled: bool,
 }
 
 impl LinearCounterData {
-    fn new(counter_for_reset: u8) -> Self {
-        LinearCounterData { counter_for_reset }
+    fn new(counter_for_reset: u8, enabled: bool) -> Self {
+        LinearCounterData {
+            counter_for_reset,
+            enabled,
+        }
     }
 }
 
@@ -1512,12 +1505,16 @@ struct LinearCounter {
 impl LinearCounter {
     fn new() -> Self {
         LinearCounter {
-            data: LinearCounterData::new(0),
+            data: LinearCounterData::new(0, false),
             counter: 0,
         }
     }
 
     fn tick(&mut self) {
+        if !self.data.enabled {
+            return;
+        }
+
         if self.counter > 0 {
             self.counter -= 1;
         }

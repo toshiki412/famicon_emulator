@@ -12,14 +12,12 @@ mod ppu;
 mod render;
 mod rom;
 
-use crate::cpu::{trace, IN_TRACE};
+use crate::cpu::IN_TRACE;
 use crate::rom::Rom;
 
-use log::{debug, info, log_enabled, trace, Level};
+use log::{debug, info, trace};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::Read;
 use std::io::Write;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
@@ -92,7 +90,7 @@ fn main() {
     //mapper1
     // let rom = load_rom("rom/dragon_quest4.nes");
     //mapper2
-    // let rom = load_rom("rom/dragon_quest2.nes");
+    let rom = load_rom("rom/dragon_quest2.nes");
     //mapper3
     // let rom = load_rom("rom/dragon_quest1.nes");
     //mapper4

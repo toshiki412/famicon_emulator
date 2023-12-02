@@ -186,6 +186,8 @@ impl Mapper for Mapper1 {
 
     fn mirroring(&self) -> Mirroring {
         match self.control & 0x03 {
+            0 => Mirroring::VERTICAL,   // ? one-screen, lower bank
+            1 => Mirroring::HORIZONTAL, // ? onescreen, upper bank
             2 => Mirroring::VERTICAL,
             3 => Mirroring::HORIZONTAL,
             _ => panic!("not support mirroring mode."),
@@ -278,7 +280,7 @@ impl Mapper for Mapper1 {
     fn read_chr_rom(&self, addr: u16) -> u8 {
         self.rom.chr_rom[addr as usize]
     }
-    fn scanline(&mut self, scanline: usize, show_background: bool) {}
+    fn scanline(&mut self, _scanline: usize, _show_background: bool) {}
     fn is_irq(&mut self) -> bool {
         false
     }
@@ -342,7 +344,7 @@ impl Mapper for Mapper2 {
     fn read_chr_rom(&self, addr: u16) -> u8 {
         self.rom.chr_rom[addr as usize]
     }
-    fn scanline(&mut self, scanline: usize, show_background: bool) {}
+    fn scanline(&mut self, _scanline: usize, _show_background: bool) {}
     fn is_irq(&mut self) -> bool {
         false
     }
@@ -383,7 +385,7 @@ impl Mapper for Mapper3 {
     fn load_prg_ram(&mut self, _raw: &Vec<u8>) {}
 
     fn read_prg_rom(&self, addr: u16) -> u8 {
-        self.rom.prg_rom[(addr as usize - 0x8000)]
+        self.rom.prg_rom[addr as usize - 0x8000]
     }
 
     fn write_chr_rom(&mut self, addr: u16, value: u8) {
@@ -394,7 +396,7 @@ impl Mapper for Mapper3 {
         let bank = self.bank_select & 0x03; //最下位2bit
         self.rom.chr_rom[(addr as usize + bank_size * bank as usize) as usize]
     }
-    fn scanline(&mut self, scanline: usize, show_background: bool) {}
+    fn scanline(&mut self, _scanline: usize, _show_background: bool) {}
     fn is_irq(&mut self) -> bool {
         false
     }
