@@ -6,3 +6,4 @@ logs
 save*.dat
 onepiece.rs
 memo.md
+scrape/node_modules
