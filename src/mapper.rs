@@ -202,6 +202,22 @@ impl Mapper for Mapper1 {
     }
 
     fn read_prg_ram(&self, addr: u16) -> u8 {
+        // フラグ設定
+        match addr {
+            // 気球入手済み
+            0x628E => {
+                return 0x02;
+            }
+            // 勇者のステータス最強
+            0x6007..=0x600B => {
+                return 0xFF;
+            }
+            // 敵一体目のHPが0
+            0x727E..=0x727F => {
+                return 0x00;
+            }
+            _ => {}
+        }
         self.prg_ram[addr as usize - 0x6000]
     }
 
@@ -213,6 +229,11 @@ impl Mapper for Mapper1 {
     }
 
     fn read_prg_rom(&self, addr: u16) -> u8 {
+        // デバッグモード
+        if addr == 0xC000 {
+            return 0x01;
+        }
+
         let bank_size = 16 * 1024 as usize; //16kB
         let bank_max = self.rom.prg_rom.len() / bank_size;
         let mut bank = self.prg_bank & 0x0F;
